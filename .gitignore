@@ -1,0 +1,46 @@
+# ============================================================
+# FolderSyncPro .gitignore
+# ============================================================
+
+# 使用者實際資料：回收桶、雙向同步狀態記錄
+# 這些是執行時才產生的個人資料，不應該上傳到公開的 repo
+data/
+data/recycle_bin/
+data/sync_state/
+
+# 資料庫檔案（如果專案資料庫檔放在根目錄，依實際檔名調整）
+*.db
+*.sqlite3
+
+# Python 編譯快取
+__pycache__/
+*.pyc
+*.pyo
+
+# PyInstaller 打包產物
+build/
+dist/
+*.spec
+
+# Inno Setup 編譯輸出
+Output/
+
+# 虛擬環境
+venv/
+.venv/
+env/
+
+# 編輯器/IDE 設定
+.vscode/
+.idea/
+
+# 系統產生的雜項檔案
+.DS_Store
+Thumbs.db
+
+# 舊測試/雜項檔案
+*.dat
+
+# macOS DMG 暫存/輸出
+dmg_staging/
+*.dmg
