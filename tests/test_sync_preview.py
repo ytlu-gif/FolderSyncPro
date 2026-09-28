@@ -193,6 +193,38 @@ class SyncPreviewTests(unittest.TestCase):
                 "same.txt",
             )
 
+    def test_preview_reports_progress(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            target = root / "target"
+            source.mkdir()
+            target.mkdir()
+
+            (source / "one.txt").write_text(
+                "one",
+                encoding="utf-8",
+            )
+            (source / "two.txt").write_text(
+                "two",
+                encoding="utf-8",
+            )
+
+            progress_events = []
+
+            preview_sync(
+                source,
+                target,
+                mode="backup",
+                progress_func=lambda done, total, relative: progress_events.append(
+                    (done, total, relative)
+                ),
+            )
+
+            self.assertEqual(len(progress_events), 2)
+            self.assertEqual(progress_events[-1][0], 2)
+            self.assertEqual(progress_events[-1][1], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

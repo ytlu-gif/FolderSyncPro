@@ -778,15 +778,15 @@ class DashboardApp(ttk.Window):
 
         self.start_sync_btn.pack(side="left", padx=5)
 
-        preview_sync_btn = ttk.Button(
+        self.preview_sync_btn = ttk.Button(
             sync_action_frame,
             command=self.show_sync_preview,
             bootstyle="info"
         )
 
-        self.reg(preview_sync_btn, "btn_preview_sync")
+        self.reg(self.preview_sync_btn, "btn_preview_sync")
 
-        preview_sync_btn.pack(side="left", padx=5)
+        self.preview_sync_btn.pack(side="left", padx=5)
 
         start_watch_btn = ttk.Button(
             sync_action_frame,
@@ -1229,24 +1229,56 @@ class DashboardApp(ttk.Window):
             self.tr("log_preview_start")
         )
 
+        self.sync_progress["value"] = 0
+        self.sync_progress_label.config(text="0%")
+
+        self.preview_sync_btn.config(state="disabled")
+
+        thread = threading.Thread(
+            target=self._run_preview_worker,
+            args=(
+                source,
+                target,
+                self.sync_mode.get(),
+                self.project_name.get() or "未命名專案"
+            ),
+            daemon=True
+        )
+
+        thread.start()
+
+    def _run_preview_worker(self, source, target, mode, project_name):
+
         try:
 
             preview = preview_sync(
                 source,
                 target,
-                mode=self.sync_mode.get(),
-                project_name=self.project_name.get() or "未命名專案"
+                mode=mode,
+                project_name=project_name,
+                progress_func=self._on_sync_progress
             )
 
         except Exception as e:
 
-            self.write_log(
-                self.tr("log_preview_failed", err=e)
+            self.after(
+                0,
+                lambda err=e: self._on_preview_error(err)
             )
 
             return
 
+        self.after(
+            0,
+            lambda result=preview: self._on_preview_success(result)
+        )
+
+    def _on_preview_success(self, preview):
+
         summary = preview["summary"]
+
+        self.sync_progress["value"] = 100
+        self.sync_progress_label.config(text="100%")
 
         self.write_log(
             self.tr(
@@ -1262,6 +1294,16 @@ class DashboardApp(ttk.Window):
             self.tr("preview_title"),
             self._format_sync_preview(preview)
         )
+
+        self.preview_sync_btn.config(state="normal")
+
+    def _on_preview_error(self, err):
+
+        self.write_log(
+            self.tr("log_preview_failed", err=err)
+        )
+
+        self.preview_sync_btn.config(state="normal")
 
     def _format_sync_preview(self, preview):
 

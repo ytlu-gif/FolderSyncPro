@@ -11,7 +11,7 @@
 ; ============================================================
 
 #define MyAppName "FolderSyncPro"
-#define MyAppVersion "1.0"
+#define MyAppVersion "0.2.0-alpha.1"
 #define MyAppPublisher "FolderSyncPro"
 #define MyAppExeName "FolderSyncPro.exe"
 
@@ -23,7 +23,7 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 OutputDir=Output
-OutputBaseFilename=FolderSyncPro_Setup
+OutputBaseFilename=FolderSyncPro_Setup_v0.2.0-alpha.1
 Compression=lzma
 SolidCompression=yes
 ; 如需自訂安裝畫面圖示，取消下一行註解並提供 .ico 檔
