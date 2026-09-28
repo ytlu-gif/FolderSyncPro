@@ -135,6 +135,64 @@ class SyncPreviewTests(unittest.TestCase):
                 "target_to_source",
             )
 
+    def test_preview_rejects_unsupported_mode(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            target = root / "target"
+            source.mkdir()
+            target.mkdir()
+
+            with self.assertRaises(ValueError):
+                preview_sync(
+                    source,
+                    target,
+                    mode="miror",
+                )
+
+    def test_two_way_preview_detects_same_size_same_time_content_conflict(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            target = root / "target"
+            source.mkdir()
+            target.mkdir()
+
+            source_file = source / "same.txt"
+            target_file = target / "same.txt"
+
+            source_file.write_text(
+                "abc",
+                encoding="utf-8",
+            )
+            target_file.write_text(
+                "xyz",
+                encoding="utf-8",
+            )
+
+            fixed_time = time.time() - 60
+            os.utime(
+                source_file,
+                (fixed_time, fixed_time),
+            )
+            os.utime(
+                target_file,
+                (fixed_time, fixed_time),
+            )
+
+            preview = preview_sync(
+                source,
+                target,
+                mode="two_way",
+                project_name="unit-test-content-conflict",
+            )
+
+            self.assertEqual(preview["summary"]["conflict"], 1)
+            self.assertEqual(
+                preview["conflict"][0]["path"],
+                "same.txt",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

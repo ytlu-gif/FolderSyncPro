@@ -6,6 +6,7 @@ from typing import Any
 
 
 STATE_DIR = Path("data") / "sync_state"
+SUPPORTED_MODES = {"backup", "mirror", "two_way"}
 
 
 def preview_sync(
@@ -32,6 +33,8 @@ def preview_sync(
     """
 
     mode = (mode or "backup").lower()
+    if mode not in SUPPORTED_MODES:
+        raise ValueError(f"不支援的同步模式：{mode}")
 
     source = Path(source_path)
     target = Path(target_path)
@@ -232,6 +235,7 @@ def _preview_two_way_existing_pair(
     same_content = (
         src_stat.st_size == tgt_stat.st_size
         and abs(src_stat.st_mtime - tgt_stat.st_mtime) < 1
+        and _files_have_same_content(src_file, tgt_file)
     )
 
     if same_content:
@@ -279,6 +283,23 @@ def _needs_source_update(
         src_stat.st_size != tgt_stat.st_size
         or src_stat.st_mtime > tgt_stat.st_mtime
     )
+
+
+def _files_have_same_content(
+    left: Path,
+    right: Path,
+    chunk_size: int = 1024 * 1024,
+) -> bool:
+    with left.open("rb") as left_file, right.open("rb") as right_file:
+        while True:
+            left_chunk = left_file.read(chunk_size)
+            right_chunk = right_file.read(chunk_size)
+
+            if left_chunk != right_chunk:
+                return False
+
+            if not left_chunk:
+                return True
 
 
 def _make_action(
