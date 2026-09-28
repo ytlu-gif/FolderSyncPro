@@ -14,6 +14,7 @@ def preview_sync(
     target_path,
     mode="backup",
     project_name="未命名專案",
+    progress_func=None,
 ) -> dict[str, Any]:
     """
     Preview planned sync actions without changing files.
@@ -50,6 +51,7 @@ def preview_sync(
             source,
             target,
             project_name=project_name,
+            progress_func=progress_func,
         )
 
     else:
@@ -57,6 +59,7 @@ def preview_sync(
             source,
             target,
             mode=mode,
+            progress_func=progress_func,
         )
 
     preview["summary"] = _build_summary(preview)
@@ -78,10 +81,19 @@ def _preview_one_way(
     source: Path,
     target: Path,
     mode: str,
+    progress_func=None,
 ) -> dict[str, Any]:
     preview = _empty_preview()
+    source_files = list(_iter_files(source))
+    target_files = (
+        list(_iter_files(target))
+        if mode == "mirror"
+        else []
+    )
+    total_steps = len(source_files) + len(target_files)
+    done_steps = 0
 
-    for src_file in _iter_files(source):
+    for src_file in source_files:
         relative = src_file.relative_to(source)
         target_file = target / relative
 
@@ -94,6 +106,13 @@ def _preview_one_way(
                     direction="source_to_target",
                     reason="Target file does not exist.",
                 )
+            )
+            done_steps += 1
+            _report_progress(
+                progress_func,
+                done_steps,
+                total_steps,
+                relative,
             )
             continue
 
@@ -108,8 +127,16 @@ def _preview_one_way(
                 )
             )
 
+        done_steps += 1
+        _report_progress(
+            progress_func,
+            done_steps,
+            total_steps,
+            relative,
+        )
+
     if mode == "mirror":
-        for target_file in _iter_files(target):
+        for target_file in target_files:
             relative = target_file.relative_to(target)
             source_file = source / relative
 
@@ -124,6 +151,14 @@ def _preview_one_way(
                     )
                 )
 
+            done_steps += 1
+            _report_progress(
+                progress_func,
+                done_steps,
+                total_steps,
+                relative,
+            )
+
     return preview
 
 
@@ -131,6 +166,7 @@ def _preview_two_way(
     source: Path,
     target: Path,
     project_name: str,
+    progress_func=None,
 ) -> dict[str, Any]:
     preview = _empty_preview()
     state = _load_state(project_name)
@@ -150,6 +186,8 @@ def _preview_two_way(
         | set(target_files)
         | set(state)
     )
+    total_steps = len(all_relatives)
+    done_steps = 0
 
     for relative_key in sorted(all_relatives):
         relative = Path(relative_key)
@@ -219,6 +257,14 @@ def _preview_two_way(
                     reason="Previously synced file no longer exists on either side.",
                 )
             )
+
+        done_steps += 1
+        _report_progress(
+            progress_func,
+            done_steps,
+            total_steps,
+            relative,
+        )
 
     return preview
 
@@ -300,6 +346,20 @@ def _files_have_same_content(
 
             if not left_chunk:
                 return True
+
+
+def _report_progress(
+    progress_func,
+    done: int,
+    total: int,
+    relative: Path,
+) -> None:
+    if progress_func:
+        progress_func(
+            done,
+            max(total, 1),
+            str(relative),
+        )
 
 
 def _make_action(
