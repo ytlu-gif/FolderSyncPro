@@ -24,6 +24,7 @@ def _resource_path(*parts):
     return base.joinpath(*parts)
 
 from core.sync_engine import sync_folder
+from core.sync_preview import preview_sync
 import tkinter as tk
 from tkinter import filedialog
 from tkinter.scrolledtext import ScrolledText
@@ -61,6 +62,7 @@ TRANSLATIONS = {
         "mode_mirror": "鏡像模式",
         "mode_two_way": "雙向同步",
         "check_auto_watch": "啟動時自動監控",
+        "btn_preview_sync": "預覽同步",
         "btn_start_sync": "開始同步",
         "btn_start_watch": "啟動監控",
         "btn_stop_watch": "停止監控",
@@ -89,6 +91,9 @@ TRANSLATIONS = {
         "log_scan_done": "掃描完成：{files} 個檔案，{folders} 個資料夾",
         "log_select_source": "請選擇來源資料夾",
         "log_select_target": "請選擇目的資料夾",
+        "log_preview_start": "產生同步預覽...",
+        "log_preview_done": "同步預覽完成 新增:{add} 更新:{update} 刪除:{delete} 衝突:{conflict}",
+        "log_preview_failed": "同步預覽失敗：{err}",
         "log_sync_start": "開始同步...",
         "log_sync_done": "同步完成 新增:{copied} 更新:{updated} 刪除:{deleted}",
         "log_sync_failed": "同步失敗：{err}",
@@ -103,6 +108,15 @@ TRANSLATIONS = {
         "log_sync_history_header": "==========同步歷史==========",
         "log_recycle_emptied": "已清空回收桶：{count} 個檔案",
         "log_project_loaded": "已載入專案：{name}",
+        "preview_title": "同步預覽",
+        "preview_empty": "沒有需要同步的檔案。",
+        "preview_summary": "摘要：新增 {add}，更新 {update}，刪除 {delete}，衝突 {conflict}，略過 {skip}，總計 {total}",
+        "preview_add": "新增",
+        "preview_update": "更新",
+        "preview_delete": "刪除",
+        "preview_conflict": "衝突",
+        "preview_skip": "略過",
+        "preview_more": "...還有 {count} 筆未顯示",
         "usage_title": "使用說明",
         "usage_text": (
             "FolderSyncPro 使用說明\n\n"
@@ -148,6 +162,7 @@ TRANSLATIONS = {
         "mode_mirror": "Mirror",
         "mode_two_way": "Two-Way Sync",
         "check_auto_watch": "Auto-watch on start",
+        "btn_preview_sync": "Preview Sync",
         "btn_start_sync": "Start Sync",
         "btn_start_watch": "Start Watching",
         "btn_stop_watch": "Stop Watching",
@@ -176,6 +191,9 @@ TRANSLATIONS = {
         "log_scan_done": "Scan complete: {files} files, {folders} folders",
         "log_select_source": "Please select a source folder",
         "log_select_target": "Please select a target folder",
+        "log_preview_start": "Building sync preview...",
+        "log_preview_done": "Sync preview complete  Add:{add}  Update:{update}  Delete:{delete}  Conflict:{conflict}",
+        "log_preview_failed": "Sync preview failed: {err}",
         "log_sync_start": "Starting sync...",
         "log_sync_done": "Sync complete  Added:{copied}  Updated:{updated}  Deleted:{deleted}",
         "log_sync_failed": "Sync failed: {err}",
@@ -190,6 +208,15 @@ TRANSLATIONS = {
         "log_sync_history_header": "========== Sync History ==========",
         "log_recycle_emptied": "Recycle bin emptied: {count} files",
         "log_project_loaded": "Project loaded: {name}",
+        "preview_title": "Sync Preview",
+        "preview_empty": "No files need to be synchronized.",
+        "preview_summary": "Summary: add {add}, update {update}, delete {delete}, conflict {conflict}, skip {skip}, total {total}",
+        "preview_add": "Add",
+        "preview_update": "Update",
+        "preview_delete": "Delete",
+        "preview_conflict": "Conflict",
+        "preview_skip": "Skip",
+        "preview_more": "...{count} more item(s) not shown",
         "usage_title": "Usage Guide",
         "usage_text": (
             "FolderSyncPro Usage Guide\n\n"
@@ -751,6 +778,16 @@ class DashboardApp(ttk.Window):
 
         self.start_sync_btn.pack(side="left", padx=5)
 
+        preview_sync_btn = ttk.Button(
+            sync_action_frame,
+            command=self.show_sync_preview,
+            bootstyle="info"
+        )
+
+        self.reg(preview_sync_btn, "btn_preview_sync")
+
+        preview_sync_btn.pack(side="left", padx=5)
+
         start_watch_btn = ttk.Button(
             sync_action_frame,
             command=self.start_watch,
@@ -1166,6 +1203,133 @@ class DashboardApp(ttk.Window):
                 folders=result["folders"]
             )
         )
+
+    def show_sync_preview(self):
+
+        source = self.source_path.get()
+        target = self.target_path.get()
+
+        if not source:
+
+            self.write_log(
+                self.tr("log_select_source")
+            )
+
+            return
+
+        if not target:
+
+            self.write_log(
+                self.tr("log_select_target")
+            )
+
+            return
+
+        self.write_log(
+            self.tr("log_preview_start")
+        )
+
+        try:
+
+            preview = preview_sync(
+                source,
+                target,
+                mode=self.sync_mode.get(),
+                project_name=self.project_name.get() or "未命名專案"
+            )
+
+        except Exception as e:
+
+            self.write_log(
+                self.tr("log_preview_failed", err=e)
+            )
+
+            return
+
+        summary = preview["summary"]
+
+        self.write_log(
+            self.tr(
+                "log_preview_done",
+                add=summary["add"],
+                update=summary["update"],
+                delete=summary["delete"],
+                conflict=summary["conflict"]
+            )
+        )
+
+        self._show_text_dialog(
+            self.tr("preview_title"),
+            self._format_sync_preview(preview)
+        )
+
+    def _format_sync_preview(self, preview):
+
+        summary = preview["summary"]
+
+        lines = [
+            self.tr(
+                "preview_summary",
+                add=summary["add"],
+                update=summary["update"],
+                delete=summary["delete"],
+                conflict=summary["conflict"],
+                skip=summary["skip"],
+                total=summary["total"]
+            ),
+            ""
+        ]
+
+        if summary["total"] == 0:
+            lines.append(
+                self.tr("preview_empty")
+            )
+            return "\n".join(lines)
+
+        sections = [
+            ("add", "preview_add"),
+            ("update", "preview_update"),
+            ("delete", "preview_delete"),
+            ("conflict", "preview_conflict"),
+            ("skip", "preview_skip"),
+        ]
+
+        max_items_per_section = 100
+
+        for key, title_key in sections:
+
+            actions = preview.get(key, [])
+
+            if not actions:
+                continue
+
+            lines.append(
+                self.tr(title_key)
+            )
+
+            for action in actions[:max_items_per_section]:
+
+                lines.append(
+                    f"- {action['path']} ({action['direction']})"
+                )
+
+                if action.get("reason"):
+
+                    lines.append(
+                        f"  {action['reason']}"
+                    )
+
+            remaining = len(actions) - max_items_per_section
+
+            if remaining > 0:
+
+                lines.append(
+                    self.tr("preview_more", count=remaining)
+                )
+
+            lines.append("")
+
+        return "\n".join(lines).rstrip()
 
     def start_sync(self):
 
