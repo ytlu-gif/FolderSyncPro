@@ -43,6 +43,9 @@ from database.project_manager import (
 from core.scanner import scan_folder
 
 
+APP_VERSION = "0.2.0-alpha.2"
+
+
 TRANSLATIONS = {
     "zh_TW": {
         "app_title": "FolderSyncPro",
@@ -64,6 +67,7 @@ TRANSLATIONS = {
         "check_auto_watch": "啟動時自動監控",
         "btn_preview_sync": "預覽同步",
         "btn_start_sync": "開始同步",
+        "btn_stop_sync": "停止同步",
         "btn_start_watch": "啟動監控",
         "btn_stop_watch": "停止監控",
         "section_project_list": "專案清單",
@@ -100,6 +104,8 @@ TRANSLATIONS = {
         "log_sync_done": "同步完成 新增:{copied} 更新:{updated} 刪除:{deleted}",
         "log_sync_failed": "同步失敗：{err}",
         "log_sync_cancelled": "同步已取消",
+        "log_stop_sync_requested": "已要求停止同步，將在目前檔案處理完成後停止...",
+        "log_sync_stopped": "同步已停止 新增:{copied} 更新:{updated} 刪除:{deleted}",
         "log_select_target_folder": "請先選擇目的資料夾",
         "log_source_not_exist": "來源不存在：{path}",
         "log_target_not_exist": "目的不存在：{path}",
@@ -151,7 +157,7 @@ TRANSLATIONS = {
         "about_title": "關於 FolderSyncPro",
         "about_text": (
             "FolderSyncPro\n"
-            "版本 1.0\n\n"
+            f"版本 {APP_VERSION}\n\n"
             "© 2026 FolderSyncPro. 保留所有權利。\n\n"
             "本程式由中國醫藥大學人文與科技學院科法碩士學位學程"
             "盧裕倉老師開發。\n\n"
@@ -178,6 +184,7 @@ TRANSLATIONS = {
         "check_auto_watch": "Auto-watch on start",
         "btn_preview_sync": "Preview Sync",
         "btn_start_sync": "Start Sync",
+        "btn_stop_sync": "Stop Sync",
         "btn_start_watch": "Start Watching",
         "btn_stop_watch": "Stop Watching",
         "section_project_list": "Project List",
@@ -214,6 +221,8 @@ TRANSLATIONS = {
         "log_sync_done": "Sync complete  Added:{copied}  Updated:{updated}  Deleted:{deleted}",
         "log_sync_failed": "Sync failed: {err}",
         "log_sync_cancelled": "Sync cancelled",
+        "log_stop_sync_requested": "Stop requested. Sync will stop after the current file finishes...",
+        "log_sync_stopped": "Sync stopped  Added:{copied}  Updated:{updated}  Deleted:{deleted}",
         "log_select_target_folder": "Please select a target folder first",
         "log_source_not_exist": "Source does not exist: {path}",
         "log_target_not_exist": "Target does not exist: {path}",
@@ -270,7 +279,7 @@ TRANSLATIONS = {
         "about_title": "About FolderSyncPro",
         "about_text": (
             "FolderSyncPro\n"
-            "Version 1.0\n\n"
+            f"Version {APP_VERSION}\n\n"
             "\u00a9 2026 FolderSyncPro. All rights reserved.\n\n"
             "Developed by Prof. Lu Yu-Tsang, Master's Program in "
             "Technology Law, College of Humanities and Technology, "
@@ -308,6 +317,8 @@ class DashboardApp(ttk.Window):
 
         self.projects = []
         self.watcher = None
+        self.sync_cancel_requested = False
+        self.sync_thread = None
 
         self.build_ui()
         self.load_statistics()
@@ -805,6 +816,17 @@ class DashboardApp(ttk.Window):
         self.reg(self.start_sync_btn, "btn_start_sync")
 
         self.start_sync_btn.pack(side="left", padx=5)
+
+        self.stop_sync_btn = ttk.Button(
+            sync_action_frame,
+            command=self.stop_sync,
+            state="disabled",
+            bootstyle="outline-danger"
+        )
+
+        self.reg(self.stop_sync_btn, "btn_stop_sync")
+
+        self.stop_sync_btn.pack(side="left", padx=5)
 
         self.preview_sync_btn = ttk.Button(
             sync_action_frame,
@@ -1592,6 +1614,7 @@ class DashboardApp(ttk.Window):
 
         mode = self.sync_mode.get()
         project_name = self.project_name.get()
+        self.sync_cancel_requested = False
 
         if mode in ("mirror", "two_way"):
 
@@ -1685,6 +1708,7 @@ class DashboardApp(ttk.Window):
                 )
 
                 self.start_sync_btn.config(state="normal")
+                self.stop_sync_btn.config(state="disabled")
 
                 return
 
@@ -1702,10 +1726,13 @@ class DashboardApp(ttk.Window):
         )
 
         self.start_sync_btn.config(state="normal")
+        self.stop_sync_btn.config(state="disabled")
 
     def _start_sync_worker_thread(self, source, target, mode, project_name):
 
+        self.sync_cancel_requested = False
         self.start_sync_btn.config(state="disabled")
+        self.stop_sync_btn.config(state="normal")
 
         self.sync_progress["value"] = 0
         self.sync_progress_label.config(text="0%")
@@ -1714,13 +1741,13 @@ class DashboardApp(ttk.Window):
             self.tr("log_sync_start")
         )
 
-        thread = threading.Thread(
+        self.sync_thread = threading.Thread(
             target=self._run_sync_worker,
             args=(source, target, mode, project_name),
             daemon=True
         )
 
-        thread.start()
+        self.sync_thread.start()
 
     def _run_sync_worker(self, source, target, mode, project_name):
         """
@@ -1740,7 +1767,8 @@ class DashboardApp(ttk.Window):
                 self._threadsafe_log,
                 mode=mode,
                 project_name=project_name,
-                progress_func=self._on_sync_progress
+                progress_func=self._on_sync_progress,
+                cancel_func=self._is_sync_cancel_requested
             )
 
             scan_result = scan_folder(source)
@@ -1764,6 +1792,22 @@ class DashboardApp(ttk.Window):
             lambda t=text: self.write_log(t)
         )
 
+    def _is_sync_cancel_requested(self):
+
+        return self.sync_cancel_requested
+
+    def stop_sync(self):
+
+        if not self.sync_thread or not self.sync_thread.is_alive():
+            return
+
+        self.sync_cancel_requested = True
+        self.stop_sync_btn.config(state="disabled")
+
+        self.write_log(
+            self.tr("log_stop_sync_requested")
+        )
+
     def _on_sync_progress(self, done, total, relative):
 
         percent = int(done / total * 100) if total else 0
@@ -1785,14 +1829,27 @@ class DashboardApp(ttk.Window):
 
     def _on_sync_success(self, result, scan_result):
 
-        self.write_log(
-            self.tr(
-                "log_sync_done",
-                copied=result["copied"],
-                updated=result["updated"],
-                deleted=result["deleted"]
+        if result.get("cancelled"):
+
+            self.write_log(
+                self.tr(
+                    "log_sync_stopped",
+                    copied=result["copied"],
+                    updated=result["updated"],
+                    deleted=result["deleted"]
+                )
             )
-        )
+
+        else:
+
+            self.write_log(
+                self.tr(
+                    "log_sync_done",
+                    copied=result["copied"],
+                    updated=result["updated"],
+                    deleted=result["deleted"]
+                )
+            )
 
         self.file_count_label.config(
             text=str(scan_result["files"])
@@ -1806,6 +1863,8 @@ class DashboardApp(ttk.Window):
         self.sync_progress_label.config(text="100%")
 
         self.start_sync_btn.config(state="normal")
+        self.stop_sync_btn.config(state="disabled")
+        self.sync_cancel_requested = False
 
     def _on_sync_error(self, err):
 
@@ -1814,6 +1873,8 @@ class DashboardApp(ttk.Window):
         )
 
         self.start_sync_btn.config(state="normal")
+        self.stop_sync_btn.config(state="disabled")
+        self.sync_cancel_requested = False
 
     def start_watch(self):
 

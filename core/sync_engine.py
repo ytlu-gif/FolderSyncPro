@@ -146,7 +146,8 @@ def sync_folder(
     log_func=None,
     mode="backup",
     project_name="未命名專案",
-    progress_func=None
+    progress_func=None,
+    cancel_func=None
 ):
     """
     backup 模式
@@ -175,7 +176,8 @@ def sync_folder(
             target_path,
             log_func=log_func,
             project_name=project_name,
-            progress_func=progress_func
+            progress_func=progress_func,
+            cancel_func=cancel_func
         )
 
     source = Path(source_path)
@@ -195,6 +197,21 @@ def sync_folder(
     copied = 0
     updated = 0
     deleted = 0
+
+    def is_cancelled():
+        return bool(cancel_func and cancel_func())
+
+    def build_result(cancelled=False):
+        return {
+
+            "copied": copied,
+
+            "updated": updated,
+
+            "deleted": deleted,
+
+            "cancelled": cancelled
+        }
 
     # 先掃過一次，算出總檔案數，進度條才有分母可以算百分比
     source_files = [
@@ -237,6 +254,13 @@ def sync_folder(
     # ==========================
 
     for src_file in source_files:
+
+        if is_cancelled():
+
+            if log_func:
+                log_func("[停止] 同步已停止")
+
+            return build_result(cancelled=True)
 
         relative = src_file.relative_to(source)
 
@@ -319,6 +343,13 @@ def sync_folder(
 
         for target_file in mirror_delete_candidates:
 
+            if is_cancelled():
+
+                if log_func:
+                    log_func("[停止] 同步已停止")
+
+                return build_result(cancelled=True)
+
             relative = target_file.relative_to(target)
 
             source_file = source / relative
@@ -346,14 +377,7 @@ def sync_folder(
 
             report(relative)
 
-    return {
-
-        "copied": copied,
-
-        "updated": updated,
-
-        "deleted": deleted
-    }
+    return build_result()
 
 
 def sync_folder_two_way(
@@ -361,7 +385,8 @@ def sync_folder_two_way(
     target_path,
     log_func=None,
     project_name="未命名專案",
-    progress_func=None
+    progress_func=None,
+    cancel_func=None
 ):
     """
     雙向同步
@@ -424,10 +449,38 @@ def sync_folder_two_way(
 
     new_state = {}
 
+    def is_cancelled():
+        return bool(cancel_func and cancel_func())
+
+    def build_result(cancelled=False):
+        return {
+
+            "copied": copied_to_target + copied_to_source,
+
+            "copied_to_target": copied_to_target,
+
+            "copied_to_source": copied_to_source,
+
+            "updated": updated,
+
+            "conflicts": conflicts,
+
+            "deleted": deleted,
+
+            "cancelled": cancelled
+        }
+
     total_steps = max(len(all_relatives), 1)
     done_steps = 0
 
     for relative in sorted(all_relatives):
+
+        if is_cancelled():
+
+            if log_func:
+                log_func("[停止] 同步已停止")
+
+            return build_result(cancelled=True)
 
         done_steps += 1
 
@@ -631,17 +684,4 @@ def sync_folder_two_way(
 
     _save_state(project_name, new_state)
 
-    return {
-
-        "copied": copied_to_target + copied_to_source,
-
-        "copied_to_target": copied_to_target,
-
-        "copied_to_source": copied_to_source,
-
-        "updated": updated,
-
-        "conflicts": conflicts,
-
-        "deleted": deleted
-    }
+    return build_result()
