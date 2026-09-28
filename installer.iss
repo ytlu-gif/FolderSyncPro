@@ -3,7 +3,7 @@
 ; 需要先安裝 Inno Setup（免費）：https://jrsoftware.org/isinfo.php
 ;
 ; 使用方式：
-;   1. 先執行 build_exe.bat，產生 dist\FolderSyncPro.exe
+;   1. 先用 PyInstaller 產生 dist_alpha2\FolderSyncPro.exe
 ;   2. 用 Inno Setup 開啟這個檔案（installer.iss）
 ;   3. 按 Build > Compile，會在 Output 資料夾產生
 ;      FolderSyncPro_Setup.exe，這就是可以直接發送給使用者、
@@ -11,7 +11,7 @@
 ; ============================================================
 
 #define MyAppName "FolderSyncPro"
-#define MyAppVersion "0.2.0-alpha.1"
+#define MyAppVersion "0.2.0-alpha.2"
 #define MyAppPublisher "FolderSyncPro"
 #define MyAppExeName "FolderSyncPro.exe"
 
@@ -23,7 +23,7 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 OutputDir=Output
-OutputBaseFilename=FolderSyncPro_Setup_v0.2.0-alpha.1
+OutputBaseFilename=FolderSyncPro_Setup_v0.2.0-alpha.2
 Compression=lzma
 SolidCompression=yes
 ; 如需自訂安裝畫面圖示，取消下一行註解並提供 .ico 檔
@@ -40,7 +40,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist_alpha2\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
