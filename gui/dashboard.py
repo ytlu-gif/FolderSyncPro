@@ -117,6 +117,15 @@ TRANSLATIONS = {
         "preview_conflict": "衝突",
         "preview_skip": "略過",
         "preview_more": "...還有 {count} 筆未顯示",
+        "preview_column_action": "動作",
+        "preview_column_path": "檔案路徑",
+        "preview_column_direction": "方向",
+        "preview_column_reason": "原因",
+        "preview_direction_source_to_target": "來源 -> 目的",
+        "preview_direction_target_to_source": "目的 -> 來源",
+        "preview_direction_delete_from_target": "從目的刪除",
+        "preview_direction_delete_from_source": "從來源刪除",
+        "preview_direction_none": "無",
         "usage_title": "使用說明",
         "usage_text": (
             "FolderSyncPro 使用說明\n\n"
@@ -217,6 +226,15 @@ TRANSLATIONS = {
         "preview_conflict": "Conflict",
         "preview_skip": "Skip",
         "preview_more": "...{count} more item(s) not shown",
+        "preview_column_action": "Action",
+        "preview_column_path": "File Path",
+        "preview_column_direction": "Direction",
+        "preview_column_reason": "Reason",
+        "preview_direction_source_to_target": "Source -> Target",
+        "preview_direction_target_to_source": "Target -> Source",
+        "preview_direction_delete_from_target": "Delete from Target",
+        "preview_direction_delete_from_source": "Delete from Source",
+        "preview_direction_none": "None",
         "usage_title": "Usage Guide",
         "usage_text": (
             "FolderSyncPro Usage Guide\n\n"
@@ -1290,9 +1308,9 @@ class DashboardApp(ttk.Window):
             )
         )
 
-        self._show_text_dialog(
+        self._show_preview_table_dialog(
             self.tr("preview_title"),
-            self._format_sync_preview(preview)
+            preview
         )
 
         self.preview_sync_btn.config(state="normal")
@@ -1304,6 +1322,174 @@ class DashboardApp(ttk.Window):
         )
 
         self.preview_sync_btn.config(state="normal")
+
+    def _show_preview_table_dialog(self, title, preview):
+
+        summary = preview["summary"]
+
+        win = tk.Toplevel(self)
+
+        win.title(title)
+        win.geometry("920x560")
+        win.configure(background="#f4f6f8")
+
+        summary_text = self.tr(
+            "preview_summary",
+            add=summary["add"],
+            update=summary["update"],
+            delete=summary["delete"],
+            conflict=summary["conflict"],
+            skip=summary["skip"],
+            total=summary["total"]
+        )
+
+        summary_label = ttk.Label(
+            win,
+            text=summary_text,
+            bootstyle="dark",
+            anchor="w"
+        )
+
+        summary_label.pack(
+            fill="x",
+            padx=15,
+            pady=(15, 10)
+        )
+
+        if summary["total"] == 0:
+            empty_label = ttk.Label(
+                win,
+                text=self.tr("preview_empty"),
+                bootstyle="dark",
+                anchor="center"
+            )
+
+            empty_label.pack(
+                fill="both",
+                expand=True,
+                padx=15,
+                pady=15
+            )
+
+            ttk.Button(
+                win,
+                text=self.tr("dialog_close"),
+                command=win.destroy,
+                bootstyle="secondary"
+            ).pack(pady=(0, 15))
+
+            return
+
+        table_frame = ttk.Frame(win)
+
+        table_frame.pack(
+            fill="both",
+            expand=True,
+            padx=15,
+            pady=(0, 15)
+        )
+
+        columns = (
+            "action",
+            "path",
+            "direction",
+            "reason",
+        )
+
+        tree = ttk.Treeview(
+            table_frame,
+            columns=columns,
+            show="headings",
+            height=16
+        )
+
+        tree.heading(
+            "action",
+            text=self.tr("preview_column_action")
+        )
+        tree.heading(
+            "path",
+            text=self.tr("preview_column_path")
+        )
+        tree.heading(
+            "direction",
+            text=self.tr("preview_column_direction")
+        )
+        tree.heading(
+            "reason",
+            text=self.tr("preview_column_reason")
+        )
+
+        tree.column("action", width=90, anchor="center", stretch=False)
+        tree.column("path", width=360, anchor="w")
+        tree.column("direction", width=140, anchor="center", stretch=False)
+        tree.column("reason", width=300, anchor="w")
+
+        y_scroll = ttk.Scrollbar(
+            table_frame,
+            orient="vertical",
+            command=tree.yview
+        )
+        x_scroll = ttk.Scrollbar(
+            table_frame,
+            orient="horizontal",
+            command=tree.xview
+        )
+
+        tree.configure(
+            yscrollcommand=y_scroll.set,
+            xscrollcommand=x_scroll.set
+        )
+
+        tree.grid(row=0, column=0, sticky="nsew")
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        x_scroll.grid(row=1, column=0, sticky="ew")
+
+        table_frame.grid_rowconfigure(0, weight=1)
+        table_frame.grid_columnconfigure(0, weight=1)
+
+        for action_type, action in self._iter_preview_rows(preview):
+            tree.insert(
+                "",
+                "end",
+                values=(
+                    self.tr(f"preview_{action_type}"),
+                    action.get("path", ""),
+                    self._format_preview_direction(
+                        action.get("direction", "")
+                    ),
+                    action.get("reason", ""),
+                )
+            )
+
+        ttk.Button(
+            win,
+            text=self.tr("dialog_close"),
+            command=win.destroy,
+            bootstyle="secondary"
+        ).pack(pady=(0, 15))
+
+    def _iter_preview_rows(self, preview):
+
+        sections = (
+            "add",
+            "update",
+            "delete",
+            "conflict",
+            "skip",
+        )
+
+        for action_type in sections:
+
+            for action in preview.get(action_type, []):
+
+                yield action_type, action
+
+    def _format_preview_direction(self, direction):
+
+        key = f"preview_direction_{direction}"
+
+        return self.tr(key)
 
     def _format_sync_preview(self, preview):
 
