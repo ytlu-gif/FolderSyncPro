@@ -225,6 +225,29 @@ class SyncPreviewTests(unittest.TestCase):
             self.assertEqual(progress_events[-1][0], 2)
             self.assertEqual(progress_events[-1][1], 2)
 
+    def test_preview_can_be_cancelled(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            target = root / "target"
+            source.mkdir()
+            target.mkdir()
+
+            for index in range(3):
+                (source / f"file-{index}.txt").write_text(
+                    str(index),
+                    encoding="utf-8",
+                )
+
+            preview = preview_sync(
+                source,
+                target,
+                mode="backup",
+                cancel_func=lambda: True,
+            )
+
+            self.assertTrue(preview["cancelled"])
+
 
 if __name__ == "__main__":
     unittest.main()

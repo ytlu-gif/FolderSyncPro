@@ -15,6 +15,7 @@ def preview_sync(
     mode="backup",
     project_name="未命名專案",
     progress_func=None,
+    cancel_func=None,
 ) -> dict[str, Any]:
     """
     Preview planned sync actions without changing files.
@@ -52,6 +53,7 @@ def preview_sync(
             target,
             project_name=project_name,
             progress_func=progress_func,
+            cancel_func=cancel_func,
         )
 
     else:
@@ -60,9 +62,11 @@ def preview_sync(
             target,
             mode=mode,
             progress_func=progress_func,
+            cancel_func=cancel_func,
         )
 
     preview["summary"] = _build_summary(preview)
+    preview.setdefault("cancelled", False)
 
     return preview
 
@@ -82,6 +86,7 @@ def _preview_one_way(
     target: Path,
     mode: str,
     progress_func=None,
+    cancel_func=None,
 ) -> dict[str, Any]:
     preview = _empty_preview()
     source_files = list(_iter_files(source))
@@ -93,7 +98,15 @@ def _preview_one_way(
     total_steps = len(source_files) + len(target_files)
     done_steps = 0
 
+    def is_cancelled():
+        return bool(cancel_func and cancel_func())
+
     for src_file in source_files:
+
+        if is_cancelled():
+            preview["cancelled"] = True
+            return preview
+
         relative = src_file.relative_to(source)
         target_file = target / relative
 
@@ -137,6 +150,11 @@ def _preview_one_way(
 
     if mode == "mirror":
         for target_file in target_files:
+
+            if is_cancelled():
+                preview["cancelled"] = True
+                return preview
+
             relative = target_file.relative_to(target)
             source_file = source / relative
 
@@ -167,6 +185,7 @@ def _preview_two_way(
     target: Path,
     project_name: str,
     progress_func=None,
+    cancel_func=None,
 ) -> dict[str, Any]:
     preview = _empty_preview()
     state = _load_state(project_name)
@@ -189,7 +208,15 @@ def _preview_two_way(
     total_steps = len(all_relatives)
     done_steps = 0
 
+    def is_cancelled():
+        return bool(cancel_func and cancel_func())
+
     for relative_key in sorted(all_relatives):
+
+        if is_cancelled():
+            preview["cancelled"] = True
+            return preview
+
         relative = Path(relative_key)
         src_file = source_files.get(relative_key)
         tgt_file = target_files.get(relative_key)

@@ -98,8 +98,10 @@ TRANSLATIONS = {
         "log_preview_start": "產生同步預覽...",
         "log_preview_done": "同步預覽完成 新增:{add} 更新:{update} 刪除:{delete} 衝突:{conflict}",
         "log_preview_failed": "同步預覽失敗：{err}",
+        "log_preview_cancelled": "同步預覽已停止",
         "log_risk_check_start": "檢查同步風險...",
         "log_risk_check_failed": "同步風險檢查失敗：{err}",
+        "log_risk_check_cancelled": "同步風險檢查已停止",
         "log_sync_start": "開始同步...",
         "log_sync_done": "同步完成 新增:{copied} 更新:{updated} 刪除:{deleted}",
         "log_sync_failed": "同步失敗：{err}",
@@ -215,8 +217,10 @@ TRANSLATIONS = {
         "log_preview_start": "Building sync preview...",
         "log_preview_done": "Sync preview complete  Add:{add}  Update:{update}  Delete:{delete}  Conflict:{conflict}",
         "log_preview_failed": "Sync preview failed: {err}",
+        "log_preview_cancelled": "Sync preview stopped",
         "log_risk_check_start": "Checking sync risks...",
         "log_risk_check_failed": "Sync risk check failed: {err}",
+        "log_risk_check_cancelled": "Sync risk check stopped",
         "log_sync_start": "Starting sync...",
         "log_sync_done": "Sync complete  Added:{copied}  Updated:{updated}  Deleted:{deleted}",
         "log_sync_failed": "Sync failed: {err}",
@@ -1282,9 +1286,11 @@ class DashboardApp(ttk.Window):
         self.sync_progress["value"] = 0
         self.sync_progress_label.config(text="0%")
 
+        self.sync_cancel_requested = False
         self.preview_sync_btn.config(state="disabled")
+        self.stop_sync_btn.config(state="normal")
 
-        thread = threading.Thread(
+        self.sync_thread = threading.Thread(
             target=self._run_preview_worker,
             args=(
                 source,
@@ -1295,7 +1301,7 @@ class DashboardApp(ttk.Window):
             daemon=True
         )
 
-        thread.start()
+        self.sync_thread.start()
 
     def _run_preview_worker(self, source, target, mode, project_name):
 
@@ -1306,7 +1312,8 @@ class DashboardApp(ttk.Window):
                 target,
                 mode=mode,
                 project_name=project_name,
-                progress_func=self._on_sync_progress
+                progress_func=self._on_sync_progress,
+                cancel_func=self._is_sync_cancel_requested
             )
 
         except Exception as e:
@@ -1324,6 +1331,18 @@ class DashboardApp(ttk.Window):
         )
 
     def _on_preview_success(self, preview):
+
+        if preview.get("cancelled"):
+
+            self.write_log(
+                self.tr("log_preview_cancelled")
+            )
+
+            self.preview_sync_btn.config(state="normal")
+            self.stop_sync_btn.config(state="disabled")
+            self.sync_cancel_requested = False
+
+            return
 
         summary = preview["summary"]
 
@@ -1346,6 +1365,8 @@ class DashboardApp(ttk.Window):
         )
 
         self.preview_sync_btn.config(state="normal")
+        self.stop_sync_btn.config(state="disabled")
+        self.sync_cancel_requested = False
 
     def _on_preview_error(self, err):
 
@@ -1354,6 +1375,8 @@ class DashboardApp(ttk.Window):
         )
 
         self.preview_sync_btn.config(state="normal")
+        self.stop_sync_btn.config(state="disabled")
+        self.sync_cancel_requested = False
 
     def _show_preview_table_dialog(self, title, preview):
 
@@ -1619,6 +1642,7 @@ class DashboardApp(ttk.Window):
         if mode in ("mirror", "two_way"):
 
             self.start_sync_btn.config(state="disabled")
+            self.stop_sync_btn.config(state="normal")
 
             self.sync_progress["value"] = 0
             self.sync_progress_label.config(text="0%")
@@ -1627,13 +1651,13 @@ class DashboardApp(ttk.Window):
                 self.tr("log_risk_check_start")
             )
 
-            thread = threading.Thread(
+            self.sync_thread = threading.Thread(
                 target=self._run_sync_risk_check_worker,
                 args=(source, target, mode, project_name),
                 daemon=True
             )
 
-            thread.start()
+            self.sync_thread.start()
 
             return
 
@@ -1653,7 +1677,8 @@ class DashboardApp(ttk.Window):
                 target,
                 mode=mode,
                 project_name=project_name or "未命名專案",
-                progress_func=self._on_sync_progress
+                progress_func=self._on_sync_progress,
+                cancel_func=self._is_sync_cancel_requested
             )
 
         except Exception as e:
@@ -1684,6 +1709,18 @@ class DashboardApp(ttk.Window):
         project_name,
         preview
     ):
+
+        if preview.get("cancelled"):
+
+            self.write_log(
+                self.tr("log_risk_check_cancelled")
+            )
+
+            self.start_sync_btn.config(state="normal")
+            self.stop_sync_btn.config(state="disabled")
+            self.sync_cancel_requested = False
+
+            return
 
         summary = preview["summary"]
         delete_count = summary["delete"]
