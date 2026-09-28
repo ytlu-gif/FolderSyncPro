@@ -26,7 +26,7 @@ def _resource_path(*parts):
 from core.sync_engine import sync_folder
 from core.sync_preview import preview_sync
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 from tkinter.scrolledtext import ScrolledText
 from core.watcher import FolderWatcher
 
@@ -94,9 +94,12 @@ TRANSLATIONS = {
         "log_preview_start": "產生同步預覽...",
         "log_preview_done": "同步預覽完成 新增:{add} 更新:{update} 刪除:{delete} 衝突:{conflict}",
         "log_preview_failed": "同步預覽失敗：{err}",
+        "log_risk_check_start": "檢查同步風險...",
+        "log_risk_check_failed": "同步風險檢查失敗：{err}",
         "log_sync_start": "開始同步...",
         "log_sync_done": "同步完成 新增:{copied} 更新:{updated} 刪除:{deleted}",
         "log_sync_failed": "同步失敗：{err}",
+        "log_sync_cancelled": "同步已取消",
         "log_select_target_folder": "請先選擇目的資料夾",
         "log_source_not_exist": "來源不存在：{path}",
         "log_target_not_exist": "目的不存在：{path}",
@@ -126,6 +129,8 @@ TRANSLATIONS = {
         "preview_direction_delete_from_target": "從目的刪除",
         "preview_direction_delete_from_source": "從來源刪除",
         "preview_direction_none": "無",
+        "risk_confirm_title": "同步風險確認",
+        "risk_confirm_message": "此次同步預覽包含 {delete} 個刪除、{conflict} 個衝突。\n是否仍要繼續同步？",
         "usage_title": "使用說明",
         "usage_text": (
             "FolderSyncPro 使用說明\n\n"
@@ -203,9 +208,12 @@ TRANSLATIONS = {
         "log_preview_start": "Building sync preview...",
         "log_preview_done": "Sync preview complete  Add:{add}  Update:{update}  Delete:{delete}  Conflict:{conflict}",
         "log_preview_failed": "Sync preview failed: {err}",
+        "log_risk_check_start": "Checking sync risks...",
+        "log_risk_check_failed": "Sync risk check failed: {err}",
         "log_sync_start": "Starting sync...",
         "log_sync_done": "Sync complete  Added:{copied}  Updated:{updated}  Deleted:{deleted}",
         "log_sync_failed": "Sync failed: {err}",
+        "log_sync_cancelled": "Sync cancelled",
         "log_select_target_folder": "Please select a target folder first",
         "log_source_not_exist": "Source does not exist: {path}",
         "log_target_not_exist": "Target does not exist: {path}",
@@ -235,6 +243,8 @@ TRANSLATIONS = {
         "preview_direction_delete_from_target": "Delete from Target",
         "preview_direction_delete_from_source": "Delete from Source",
         "preview_direction_none": "None",
+        "risk_confirm_title": "Sync Risk Confirmation",
+        "risk_confirm_message": "This sync preview includes {delete} delete action(s) and {conflict} conflict(s).\nDo you still want to continue?",
         "usage_title": "Usage Guide",
         "usage_text": (
             "FolderSyncPro Usage Guide\n\n"
@@ -1580,6 +1590,121 @@ class DashboardApp(ttk.Window):
 
             return
 
+        mode = self.sync_mode.get()
+        project_name = self.project_name.get()
+
+        if mode in ("mirror", "two_way"):
+
+            self.start_sync_btn.config(state="disabled")
+
+            self.sync_progress["value"] = 0
+            self.sync_progress_label.config(text="0%")
+
+            self.write_log(
+                self.tr("log_risk_check_start")
+            )
+
+            thread = threading.Thread(
+                target=self._run_sync_risk_check_worker,
+                args=(source, target, mode, project_name),
+                daemon=True
+            )
+
+            thread.start()
+
+            return
+
+        self._start_sync_worker_thread(
+            source,
+            target,
+            mode,
+            project_name
+        )
+
+    def _run_sync_risk_check_worker(self, source, target, mode, project_name):
+
+        try:
+
+            preview = preview_sync(
+                source,
+                target,
+                mode=mode,
+                project_name=project_name or "未命名專案",
+                progress_func=self._on_sync_progress
+            )
+
+        except Exception as e:
+
+            self.after(
+                0,
+                lambda err=e: self._on_sync_risk_check_error(err)
+            )
+
+            return
+
+        self.after(
+            0,
+            lambda result=preview: self._on_sync_risk_check_success(
+                source,
+                target,
+                mode,
+                project_name,
+                result
+            )
+        )
+
+    def _on_sync_risk_check_success(
+        self,
+        source,
+        target,
+        mode,
+        project_name,
+        preview
+    ):
+
+        summary = preview["summary"]
+        delete_count = summary["delete"]
+        conflict_count = summary["conflict"]
+
+        if delete_count or conflict_count:
+
+            should_continue = messagebox.askyesno(
+                self.tr("risk_confirm_title"),
+                self.tr(
+                    "risk_confirm_message",
+                    delete=delete_count,
+                    conflict=conflict_count
+                ),
+                parent=self
+            )
+
+            if not should_continue:
+
+                self.write_log(
+                    self.tr("log_sync_cancelled")
+                )
+
+                self.start_sync_btn.config(state="normal")
+
+                return
+
+        self._start_sync_worker_thread(
+            source,
+            target,
+            mode,
+            project_name
+        )
+
+    def _on_sync_risk_check_error(self, err):
+
+        self.write_log(
+            self.tr("log_risk_check_failed", err=err)
+        )
+
+        self.start_sync_btn.config(state="normal")
+
+    def _start_sync_worker_thread(self, source, target, mode, project_name):
+
         self.start_sync_btn.config(state="disabled")
 
         self.sync_progress["value"] = 0
@@ -1588,9 +1713,6 @@ class DashboardApp(ttk.Window):
         self.write_log(
             self.tr("log_sync_start")
         )
-
-        mode = self.sync_mode.get()
-        project_name = self.project_name.get()
 
         thread = threading.Thread(
             target=self._run_sync_worker,
