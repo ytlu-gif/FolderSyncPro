@@ -1,10 +1,11 @@
 import os
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from core.sync_preview import preview_sync
+from core.sync_preview import STATE_DIR, _state_file_path, preview_sync
 
 
 class SyncPreviewTests(unittest.TestCase):
@@ -193,6 +194,71 @@ class SyncPreviewTests(unittest.TestCase):
                 "same.txt",
             )
 
+    def test_two_way_preview_uses_state_to_skip_unchanged_content_read(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            target = root / "target"
+            source.mkdir()
+            target.mkdir()
+
+            source_file = source / "same.txt"
+            target_file = target / "same.txt"
+
+            source_file.write_text(
+                "abc",
+                encoding="utf-8",
+            )
+            target_file.write_text(
+                "abc",
+                encoding="utf-8",
+            )
+
+            fixed_time = time.time() - 60
+            os.utime(
+                source_file,
+                (fixed_time, fixed_time),
+            )
+            os.utime(
+                target_file,
+                (fixed_time, fixed_time),
+            )
+
+            project_name = "unit-test-synced-state-fast-path"
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            state_path = _state_file_path(project_name)
+            state_path.write_text(
+                (
+                    "{\n"
+                    '  "same.txt": {\n'
+                    '    "size": 3,\n'
+                    f'    "mtime": {fixed_time}\n'
+                    "  }\n"
+                    "}"
+                ),
+                encoding="utf-8",
+            )
+
+            try:
+                with patch(
+                    "core.sync_preview._files_have_same_content",
+                    side_effect=AssertionError(
+                        "unchanged synced files should not be reread"
+                    ),
+                ):
+                    preview = preview_sync(
+                        source,
+                        target,
+                        mode="two_way",
+                        project_name=project_name,
+                    )
+
+                self.assertEqual(preview["summary"]["conflict"], 0)
+                self.assertEqual(preview["summary"]["total"], 0)
+
+            finally:
+                state_path.unlink(missing_ok=True)
+
     def test_preview_reports_progress(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -247,6 +313,42 @@ class SyncPreviewTests(unittest.TestCase):
             )
 
             self.assertTrue(preview["cancelled"])
+
+    def test_preview_ignores_default_high_churn_folders(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            target = root / "target"
+            source.mkdir()
+            target.mkdir()
+
+            (source / "keep.txt").write_text(
+                "keep",
+                encoding="utf-8",
+            )
+
+            git_dir = source / ".git" / "objects"
+            git_dir.mkdir(parents=True)
+            (git_dir / "ignored.txt").write_text(
+                "ignored",
+                encoding="utf-8",
+            )
+
+            cache_dir = source / "__pycache__"
+            cache_dir.mkdir()
+            (cache_dir / "ignored.pyc").write_bytes(b"cache")
+
+            preview = preview_sync(
+                source,
+                target,
+                mode="backup",
+            )
+
+            self.assertEqual(preview["summary"]["add"], 1)
+            self.assertEqual(
+                preview["add"][0]["path"],
+                "keep.txt",
+            )
 
 
 if __name__ == "__main__":

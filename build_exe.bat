@@ -12,8 +12,8 @@ echo [1/3] Installing dependencies...
 pip install -r requirements.txt
 
 echo [2/3] Cleaning previous build output...
-rmdir /s /q build 2>nul
-rmdir /s /q dist 2>nul
+rmdir /s /q build_v0_3_alpha1 2>nul
+rmdir /s /q dist_v0_3_alpha1 2>nul
 del /q FolderSyncPro.spec 2>nul
 
 echo [3/3] Building...
@@ -24,6 +24,8 @@ python -m PyInstaller ^
     --name "FolderSyncPro" ^
     --onefile ^
     --windowed ^
+    --distpath dist_v0_3_alpha1 ^
+    --workpath build_v0_3_alpha1 ^
     --icon "assets\icon.ico" ^
     --collect-all ttkbootstrap ^
     --hidden-import watchdog.observers ^
@@ -31,5 +33,5 @@ python -m PyInstaller ^
     main.py
 
 echo.
-echo Done. Executable location: dist\FolderSyncPro.exe
+echo Done. Executable location: dist_v0_3_alpha1\FolderSyncPro.exe
 pause

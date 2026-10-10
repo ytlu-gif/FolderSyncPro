@@ -44,16 +44,15 @@ Suggested milestone:
 
 - `v0.2.0-alpha.2`
 
-### 3. SHA256 Content Comparison
+### 3. Fast Scan
 
-File comparison should become more reliable than size and modified time alone.
+Scanning should stay responsive as project folders grow.
 
 Planned behavior:
 
-- Add optional SHA256 hashing for file content comparison.
-- Use hashes to reduce false positives and false negatives.
-- Keep performance acceptable for large folders.
-- Consider caching hashes in a later metadata database.
+- Skip high-churn folders such as `.git`, virtual environments, and caches.
+- Use a faster shared scanner for preview, scan, and sync operations.
+- Avoid repeated file metadata reads during comparison.
 
 Suggested milestone:
 
@@ -104,6 +103,56 @@ These are useful but should come after the safety-focused v0.2.0 work.
 - Add SFTP, WebDAV, NAS, or cloud storage backends.
 - Add automatic update checks.
 - Add code signing for Windows releases.
+
+## v0.3.0 - Performance and Indexing Update
+
+Goal: reduce repeated full-folder work for users who run FolderSyncPro often.
+
+### 1. SQLite File Index
+
+FolderSyncPro should maintain a local metadata index for project files.
+
+Planned behavior:
+
+- Store relative path, size, and modified time in SQLite.
+- Update source and target snapshots after full sync runs.
+- Update individual indexed paths after incremental sync runs.
+- Keep the index as a performance cache, not the only source of truth.
+
+Suggested milestone:
+
+- `v0.3.0-alpha.1`
+
+### 2. Incremental Watcher Sync
+
+Folder watcher events should sync only affected relative paths when possible.
+
+Planned behavior:
+
+- Convert watchdog events into relative file paths.
+- Send changed paths into the sync engine.
+- Avoid full-project scans for common single-file changes.
+- Fall back to full scan when no changed path can be identified.
+
+Suggested milestone:
+
+- `v0.3.0-alpha.1`
+
+### 3. USN Journal Acceleration
+
+Windows NTFS can later provide changed file records even when the app was not
+running.
+
+Planned behavior:
+
+- Detect whether the folder is on a supported NTFS volume.
+- Store the last known USN journal position.
+- Resolve changed records back into relative paths.
+- Fall back to normal scan on unsupported drives or permission failures.
+
+Suggested milestone:
+
+- `v0.3.0-alpha.2`
 
 ## Versioning Notes
 
