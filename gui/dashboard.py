@@ -43,7 +43,7 @@ from database.project_manager import (
 from core.scanner import scan_folder
 
 
-APP_VERSION = "0.2.0-alpha.2"
+APP_VERSION = "0.3.0-alpha.1"
 
 
 TRANSLATIONS = {

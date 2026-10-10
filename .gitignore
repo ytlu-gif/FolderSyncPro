@@ -20,7 +20,10 @@ __pycache__/
 # PyInstaller 打包產物
 build/
 dist/
+build_*/
+dist_*/
 *.spec
+*.exe
 
 # Inno Setup 編譯輸出
 Output/

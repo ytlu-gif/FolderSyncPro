@@ -1,5 +1,6 @@
 import threading
 import time
+from pathlib import Path
 
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -54,13 +55,15 @@ class SyncEventHandler(FileSystemEventHandler):
         try:
 
             self._last_sync_time = time.time()
+            changed_paths = self._event_relative_paths(event)
 
             result = sync_folder(
                 self.source_path,
                 self.target_path,
                 self.log_func,
                 mode=self.mode,
-                project_name=self.project_name
+                project_name=self.project_name,
+                changed_paths=changed_paths or None
             )
 
             if self.log_func:
@@ -84,6 +87,39 @@ class SyncEventHandler(FileSystemEventHandler):
         finally:
 
             self.sync_lock.release()
+
+    def _event_relative_paths(self, event):
+        relatives = set()
+
+        for path_value in (
+            getattr(event, "src_path", None),
+            getattr(event, "dest_path", None),
+        ):
+            if not path_value:
+                continue
+
+            relative = self._relative_to_sync_root(path_value)
+
+            if relative:
+                relatives.add(relative)
+
+        return relatives
+
+    def _relative_to_sync_root(self, path_value):
+        path = Path(path_value)
+
+        for root_value in (
+            self.source_path,
+            self.target_path,
+        ):
+            root = Path(root_value)
+
+            try:
+                return path.relative_to(root).as_posix()
+            except ValueError:
+                continue
+
+        return None
 
 
 class FolderWatcher:

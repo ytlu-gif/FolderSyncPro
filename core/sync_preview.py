@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from core.file_scanner import FileEntry, iter_sync_files
+
 
 STATE_DIR = Path("data") / "sync_state"
 SUPPORTED_MODES = {"backup", "mirror", "two_way"}
@@ -89,28 +91,55 @@ def _preview_one_way(
     cancel_func=None,
 ) -> dict[str, Any]:
     preview = _empty_preview()
-    source_files = list(_iter_files(source))
-    target_files = (
-        list(_iter_files(target))
-        if mode == "mirror"
-        else []
-    )
-    total_steps = len(source_files) + len(target_files)
-    done_steps = 0
 
     def is_cancelled():
         return bool(cancel_func and cancel_func())
 
-    for src_file in source_files:
+    source_files = list(_iter_file_entries(source, cancel_func=cancel_func))
+
+    if is_cancelled():
+        preview["cancelled"] = True
+        return preview
+
+    target_files = (
+        list(_iter_file_entries(target, cancel_func=cancel_func))
+        if mode == "mirror"
+        else []
+    )
+
+    if is_cancelled():
+        preview["cancelled"] = True
+        return preview
+
+    total_steps = len(source_files) + len(target_files)
+    done_steps = 0
+    source_keys = {
+        entry.relative_path.as_posix()
+        for entry in source_files
+    }
+    target_entries = {
+        entry.relative_path.as_posix(): entry
+        for entry in target_files
+    }
+
+    for src_entry in source_files:
 
         if is_cancelled():
             preview["cancelled"] = True
             return preview
 
-        relative = src_file.relative_to(source)
+        src_file = src_entry.path
+        relative = src_entry.relative_path
+        relative_key = relative.as_posix()
         target_file = target / relative
+        target_entry = target_entries.get(relative_key)
 
-        if not target_file.exists():
+        if mode == "mirror":
+            target_exists = target_entry is not None
+        else:
+            target_exists = target_file.exists()
+
+        if not target_exists:
             preview["add"].append(
                 _make_action(
                     relative,
@@ -129,7 +158,9 @@ def _preview_one_way(
             )
             continue
 
-        if _needs_source_update(src_file, target_file):
+        comparison_target = target_entry if target_entry else target_file
+
+        if _needs_source_update(src_entry, comparison_target):
             preview["update"].append(
                 _make_action(
                     relative,
@@ -149,16 +180,17 @@ def _preview_one_way(
         )
 
     if mode == "mirror":
-        for target_file in target_files:
+        for target_entry in target_files:
 
             if is_cancelled():
                 preview["cancelled"] = True
                 return preview
 
-            relative = target_file.relative_to(target)
+            target_file = target_entry.path
+            relative = target_entry.relative_path
             source_file = source / relative
 
-            if not source_file.exists():
+            if relative.as_posix() not in source_keys:
                 preview["delete"].append(
                     _make_action(
                         relative,
@@ -190,15 +222,26 @@ def _preview_two_way(
     preview = _empty_preview()
     state = _load_state(project_name)
 
+    def is_cancelled():
+        return bool(cancel_func and cancel_func())
+
     source_files = {
-        file.relative_to(source).as_posix(): file
-        for file in _iter_files(source)
+        entry.relative_path.as_posix(): entry
+        for entry in _iter_file_entries(source, cancel_func=cancel_func)
     }
 
+    if is_cancelled():
+        preview["cancelled"] = True
+        return preview
+
     target_files = {
-        file.relative_to(target).as_posix(): file
-        for file in _iter_files(target)
+        entry.relative_path.as_posix(): entry
+        for entry in _iter_file_entries(target, cancel_func=cancel_func)
     }
+
+    if is_cancelled():
+        preview["cancelled"] = True
+        return preview
 
     all_relatives = (
         set(source_files)
@@ -208,9 +251,6 @@ def _preview_two_way(
     total_steps = len(all_relatives)
     done_steps = 0
 
-    def is_cancelled():
-        return bool(cancel_func and cancel_func())
-
     for relative_key in sorted(all_relatives):
 
         if is_cancelled():
@@ -218,24 +258,25 @@ def _preview_two_way(
             return preview
 
         relative = Path(relative_key)
-        src_file = source_files.get(relative_key)
-        tgt_file = target_files.get(relative_key)
+        src_entry = source_files.get(relative_key)
+        tgt_entry = target_files.get(relative_key)
         was_synced = relative_key in state
 
-        if src_file and tgt_file:
+        if src_entry and tgt_entry:
             _preview_two_way_existing_pair(
                 preview,
                 relative,
-                src_file,
-                tgt_file,
+                src_entry,
+                tgt_entry,
+                state.get(relative_key),
             )
 
-        elif src_file and not tgt_file:
+        elif src_entry and not tgt_entry:
             if was_synced:
                 preview["delete"].append(
                     _make_action(
                         relative,
-                        source=src_file,
+                        source=src_entry.path,
                         target=target / relative,
                         direction="delete_from_source",
                         reason="Target side appears to have deleted a previously synced file.",
@@ -245,20 +286,20 @@ def _preview_two_way(
                 preview["add"].append(
                     _make_action(
                         relative,
-                        source=src_file,
+                        source=src_entry.path,
                         target=target / relative,
                         direction="source_to_target",
                         reason="New file exists only in source.",
                     )
                 )
 
-        elif tgt_file and not src_file:
+        elif tgt_entry and not src_entry:
             if was_synced:
                 preview["delete"].append(
                     _make_action(
                         relative,
                         source=source / relative,
-                        target=tgt_file,
+                        target=tgt_entry.path,
                         direction="delete_from_target",
                         reason="Source side appears to have deleted a previously synced file.",
                     )
@@ -267,7 +308,7 @@ def _preview_two_way(
                 preview["add"].append(
                     _make_action(
                         relative,
-                        source=tgt_file,
+                        source=tgt_entry.path,
                         target=source / relative,
                         direction="target_to_source",
                         reason="New file exists only in target.",
@@ -299,22 +340,30 @@ def _preview_two_way(
 def _preview_two_way_existing_pair(
     preview: dict[str, list[dict[str, Any]]],
     relative: Path,
-    src_file: Path,
-    tgt_file: Path,
+    src_entry: FileEntry,
+    tgt_entry: FileEntry,
+    state_entry: Any,
 ) -> None:
-    src_stat = src_file.stat()
-    tgt_stat = tgt_file.stat()
+    src_file = src_entry.path
+    tgt_file = tgt_entry.path
+
+    if _entries_match_synced_state(
+        src_entry,
+        tgt_entry,
+        state_entry,
+    ):
+        return
 
     same_content = (
-        src_stat.st_size == tgt_stat.st_size
-        and abs(src_stat.st_mtime - tgt_stat.st_mtime) < 1
+        src_entry.size == tgt_entry.size
+        and abs(src_entry.mtime - tgt_entry.mtime) < 1
         and _files_have_same_content(src_file, tgt_file)
     )
 
     if same_content:
         return
 
-    if src_stat.st_mtime >= tgt_stat.st_mtime:
+    if src_entry.mtime >= tgt_entry.mtime:
         direction = "source_to_target"
         source = src_file
         target = tgt_file
@@ -336,25 +385,48 @@ def _preview_two_way_existing_pair(
     )
 
 
-def _iter_files(root: Path):
-    if not root.exists():
-        return
+def _entries_match_synced_state(
+    src_entry: FileEntry,
+    tgt_entry: FileEntry,
+    state_entry: Any,
+) -> bool:
+    if not isinstance(state_entry, dict):
+        return False
 
-    for file in root.rglob("*"):
-        if file.is_file():
-            yield file
+    state_size = state_entry.get("size")
+    state_mtime = state_entry.get("mtime")
+
+    if state_size != src_entry.size or state_size != tgt_entry.size:
+        return False
+
+    if not isinstance(state_mtime, (int, float)):
+        return False
+
+    return (
+        abs(src_entry.mtime - state_mtime) < 1
+        and abs(tgt_entry.mtime - state_mtime) < 1
+    )
+
+
+def _iter_file_entries(root: Path, cancel_func=None):
+    yield from iter_sync_files(root, cancel_func=cancel_func)
 
 
 def _needs_source_update(
-    src_file: Path,
-    target_file: Path,
+    src_entry: FileEntry,
+    target,
 ) -> bool:
-    src_stat = src_file.stat()
-    tgt_stat = target_file.stat()
+    if isinstance(target, FileEntry):
+        target_size = target.size
+        target_mtime = target.mtime
+    else:
+        tgt_stat = target.stat()
+        target_size = tgt_stat.st_size
+        target_mtime = tgt_stat.st_mtime
 
     return (
-        src_stat.st_size != tgt_stat.st_size
-        or src_stat.st_mtime > tgt_stat.st_mtime
+        src_entry.size != target_size
+        or src_entry.mtime > target_mtime
     )
 
 
