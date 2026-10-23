@@ -3,10 +3,8 @@ from __future__ import annotations
 import atexit
 import ctypes
 import json
+import multiprocessing.connection as mp_connection
 import os
-import secrets
-import socket
-import subprocess
 import sys
 import threading
 import time
@@ -50,8 +48,8 @@ class ElevatedUSNClient:
     """Talk to one elevated helper process for the lifetime of the GUI."""
 
     def __init__(self):
-        self._port: int | None = None
-        self._token: str | None = None
+        self._listener = None
+        self._connection = None
         self._started = False
         self._disabled = False
         self._lock = threading.Lock()
@@ -77,8 +75,16 @@ class ElevatedUSNClient:
 
             try:
                 response = self._exchange(request)
-            except (OSError, RuntimeError, ValueError, KeyError):
+            except (
+                EOFError,
+                KeyError,
+                OSError,
+                RuntimeError,
+                TimeoutError,
+                ValueError,
+            ):
                 self._started = False
+                self._close_transport()
                 return None
 
             if not response.get("ok"):
@@ -98,55 +104,81 @@ class ElevatedUSNClient:
 
     def close(self):
         with self._lock:
-            if not self._started:
+            if (
+                not self._started
+                and self._connection is None
+                and self._listener is None
+            ):
                 return
 
             try:
-                self._exchange({"op": "shutdown"}, timeout=5.0)
-            except (OSError, RuntimeError, ValueError):
+                if self._connection is not None:
+                    self._exchange({"op": "shutdown"}, timeout=5.0)
+            except (EOFError, OSError, RuntimeError, TimeoutError, ValueError):
                 pass
             finally:
                 self._started = False
-                self._port = None
-                self._token = None
+                self._close_transport()
 
     def _ensure_started(self) -> bool:
         if self._started:
             try:
                 self._exchange({"op": "ping"}, timeout=3.0)
                 return True
-            except (OSError, RuntimeError, ValueError):
+            except (EOFError, OSError, RuntimeError, TimeoutError, ValueError):
                 self._started = False
 
-        port = self._find_free_port()
-        token = secrets.token_urlsafe(32)
+                self._close_transport()
 
-        if not self._launch_helper(port, token):
+        try:
+            listener = mp_connection.Listener(
+                family="AF_PIPE",
+                authkey=None,
+            )
+        except (OSError, RuntimeError):
             return False
 
-        deadline = time.monotonic() + _CONNECT_TIMEOUT
-        while time.monotonic() < deadline:
-            try:
-                self._port = port
-                self._token = token
-                response = self._exchange({"op": "ping"}, timeout=1.0)
-                if response.get("ok"):
-                    self._started = True
-                    return True
-            except (OSError, RuntimeError, ValueError):
-                time.sleep(0.15)
+        self._listener = listener
+        pipe_name = str(listener.address)
+        if not self._launch_helper(pipe_name):
+            self._close_transport()
+            return False
 
-        self._port = None
-        self._token = None
+        accepted = []
+
+        def accept_connection():
+            try:
+                accepted.append(listener.accept())
+            except (OSError, RuntimeError):
+                return
+
+        accept_thread = threading.Thread(
+            target=accept_connection,
+            name="FolderSyncPro-USN-pipe",
+            daemon=True,
+        )
+        accept_thread.start()
+        deadline = time.monotonic() + _CONNECT_TIMEOUT
+        while accept_thread.is_alive() and time.monotonic() < deadline:
+            accept_thread.join(0.15)
+
+        if not accepted:
+            self._close_transport()
+            return False
+
+        self._connection = accepted[0]
+        try:
+            response = self._exchange({"op": "ping"}, timeout=3.0)
+            if response.get("ok"):
+                self._started = True
+                return True
+        except (EOFError, OSError, RuntimeError, TimeoutError, ValueError):
+            pass
+
+        self._close_transport()
         return False
 
-    @staticmethod
-    def _find_free_port() -> int:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-            probe.bind(("127.0.0.1", 0))
-            return int(probe.getsockname()[1])
-
-    def _launch_helper(self, port: int, token: str) -> bool:
+    def _launch_helper(self, pipe_name: str) -> bool:
         if os.name != "nt":
             return False
 
@@ -157,29 +189,26 @@ class ElevatedUSNClient:
 
         if getattr(sys, "frozen", False):
             executable = helper_path
-            arguments = [
-                "--server",
-                "--port",
-                str(port),
-                "--token",
-                token,
-            ]
+            params = f"--server --pipe {pipe_name}"
         else:
-            script = project_root / "usn_helper.py"
             executable = Path(sys.executable)
-            arguments = [
-                str(script),
-                "--server",
-                "--port",
-                str(port),
-                "--token",
-                token,
-            ]
+            params = f"-m usn_helper --server --pipe {pipe_name}"
+            working_directory = project_root
 
         if not executable.exists():
             return False
 
-        params = subprocess.list2cmdline(arguments)
+        if getattr(sys, "frozen", False):
+            working_directory = executable.parent
+
+        # The pipe name is generated by multiprocessing and intentionally has
+        # no whitespace or quoting characters. No bearer token is exposed in
+        # the elevated process command line.
+        if (
+            not pipe_name.startswith("\\\\.\\pipe\\")
+            or any(char in pipe_name for char in ' \t\r\n"')
+        ):
+            return False
 
         try:
             shell32 = ctypes.WinDLL("shell32", use_last_error=True)
@@ -197,56 +226,40 @@ class ElevatedUSNClient:
                 "runas",
                 str(executable),
                 params,
-                str(executable.parent),
+                str(working_directory),
                 0,
             )
-        except (AttributeError, OSError):
+        except (AttributeError, OSError, TypeError):
             return False
 
         return int(result or 0) > 32
 
     def _exchange(self, payload, timeout=_REQUEST_TIMEOUT):
-        if self._port is None or self._token is None:
+        if self._connection is None:
             raise RuntimeError("USN helper 尚未啟動")
 
         message = dict(payload)
-        message["token"] = self._token
-        encoded = (json.dumps(message, ensure_ascii=False) + "\n").encode(
-            "utf-8"
-        )
+        encoded = json.dumps(message, ensure_ascii=False).encode("utf-8")
+        self._connection.send_bytes(encoded)
+        if not self._connection.poll(timeout):
+            raise TimeoutError("USN helper 回應逾時")
 
-        with socket.create_connection(
-            ("127.0.0.1", self._port),
-            timeout=timeout,
-        ) as connection:
-            connection.sendall(encoded)
-            connection.settimeout(timeout)
-            response = self._receive_line(connection)
-
+        response = self._connection.recv_bytes(_MAX_RESPONSE_BYTES)
         return json.loads(response.decode("utf-8"))
 
-    @staticmethod
-    def _receive_line(connection) -> bytes:
-        chunks = []
-        total = 0
+    def _close_transport(self):
+        connection = self._connection
+        listener = self._listener
+        self._connection = None
+        self._listener = None
 
-        while True:
-            chunk = connection.recv(65536)
-            if not chunk:
-                raise RuntimeError("USN helper 提前關閉連線")
-
-            newline = chunk.find(b"\n")
-            if newline >= 0:
-                chunks.append(chunk[:newline])
-                total += newline
-                break
-
-            chunks.append(chunk)
-            total += len(chunk)
-            if total > _MAX_RESPONSE_BYTES:
-                raise RuntimeError("USN helper 回應過大")
-
-        return b"".join(chunks)
+        for transport in (connection, listener):
+            if transport is None:
+                continue
+            try:
+                transport.close()
+            except (OSError, ValueError):
+                pass
 
 
 _CLIENT: ElevatedUSNClient | None = None

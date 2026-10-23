@@ -1,38 +1,85 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
-import socket
+import multiprocessing.connection as mp_connection
 import time
 
 from core.usn_journal import JournalCursor, read_changed_paths
 
 
 IDLE_TIMEOUT_SECONDS = 300
+CONNECT_TIMEOUT_SECONDS = 15
 MAX_REQUEST_BYTES = 1024 * 1024
 
+_GENERIC_READ = 0x80000000
+_GENERIC_WRITE = 0x40000000
+_OPEN_EXISTING = 3
+_FILE_FLAG_OVERLAPPED = 0x40000000
+_PIPE_READMODE_MESSAGE = 0x00000002
+_ERROR_FILE_NOT_FOUND = 2
+_ERROR_PIPE_BUSY = 231
+_ERROR_SEM_TIMEOUT = 121
+_INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 
-def _receive_line(connection) -> bytes:
-    chunks = []
-    total = 0
 
-    while True:
-        chunk = connection.recv(65536)
-        if not chunk:
-            raise RuntimeError("主程式提前關閉連線")
+def _connect_pipe(pipe_name: str):
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_file = kernel32.CreateFileW
+    create_file.argtypes = [
+        ctypes.c_wchar_p,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+    ]
+    create_file.restype = ctypes.c_void_p
+    set_pipe_state = kernel32.SetNamedPipeHandleState
+    set_pipe_state.argtypes = [
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_uint32),
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+    ]
+    set_pipe_state.restype = ctypes.c_int
 
-        newline = chunk.find(b"\n")
-        if newline >= 0:
-            chunks.append(chunk[:newline])
-            total += newline
-            break
+    deadline = time.monotonic() + CONNECT_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        handle = create_file(
+            pipe_name,
+            _GENERIC_READ | _GENERIC_WRITE,
+            0,
+            None,
+            _OPEN_EXISTING,
+            _FILE_FLAG_OVERLAPPED,
+            None,
+        )
+        if handle != _INVALID_HANDLE_VALUE:
+            read_mode = ctypes.c_uint32(_PIPE_READMODE_MESSAGE)
+            if not set_pipe_state(handle, ctypes.byref(read_mode), None, None):
+                kernel32.CloseHandle(handle)
+                error_code = ctypes.get_last_error()
+                raise OSError(error_code, ctypes.WinError(error_code))
+            return mp_connection.PipeConnection(handle)
 
-        chunks.append(chunk)
-        total += len(chunk)
-        if total > MAX_REQUEST_BYTES:
-            raise RuntimeError("USN helper 收到過大的請求")
+        error_code = ctypes.get_last_error()
+        if error_code not in (
+            _ERROR_FILE_NOT_FOUND,
+            _ERROR_PIPE_BUSY,
+            _ERROR_SEM_TIMEOUT,
+        ):
+            raise OSError(error_code, ctypes.WinError(error_code))
+        time.sleep(0.15)
 
-    return b"".join(chunks)
+    raise TimeoutError("無法連線到 FolderSyncPro USN 管道")
+
+
+def _receive_message(connection):
+    payload = connection.recv_bytes(MAX_REQUEST_BYTES)
+    return json.loads(payload.decode("utf-8"))
 
 
 def _cursor_from_dict(value):
@@ -57,10 +104,7 @@ def _cursor_to_dict(cursor):
     }
 
 
-def _handle_request(request, expected_token):
-    if request.get("token") != expected_token:
-        return {"ok": False, "error": "invalid token"}, False
-
+def _handle_request(request):
     operation = request.get("op")
     if operation == "ping":
         return {"ok": True}, False
@@ -87,49 +131,50 @@ def _handle_request(request, expected_token):
     }, False
 
 
-def serve(port: int, token: str):
+def serve(pipe_name: str):
     deadline = time.monotonic() + IDLE_TIMEOUT_SECONDS
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server.bind(("127.0.0.1", port))
-        server.listen(1)
-        server.settimeout(2.0)
+    try:
+        connection = _connect_pipe(pipe_name)
+        try:
+            while time.monotonic() < deadline:
+                remaining = min(2.0, deadline - time.monotonic())
+                if not connection.poll(max(remaining, 0.0)):
+                    continue
 
-        while time.monotonic() < deadline:
-            try:
-                connection, _address = server.accept()
-            except socket.timeout:
-                continue
-
-            deadline = time.monotonic() + IDLE_TIMEOUT_SECONDS
-            with connection:
                 try:
-                    request = json.loads(_receive_line(connection).decode("utf-8"))
-                    response, should_stop = _handle_request(request, token)
-                except (KeyError, TypeError, ValueError, RuntimeError) as exc:
+                    request = _receive_message(connection)
+                    response, should_stop = _handle_request(request)
+                except (
+                    EOFError,
+                    KeyError,
+                    TypeError,
+                    ValueError,
+                    RuntimeError,
+                ) as exc:
                     response = {"ok": False, "error": str(exc)}
                     should_stop = False
 
-                connection.sendall(
-                    (json.dumps(response, ensure_ascii=False) + "\n").encode(
-                        "utf-8"
-                    )
+                connection.send_bytes(
+                    json.dumps(response, ensure_ascii=False).encode("utf-8")
                 )
-
-            if should_stop:
-                return
+                deadline = time.monotonic() + IDLE_TIMEOUT_SECONDS
+                if should_stop:
+                    return
+        finally:
+            connection.close()
+    except (EOFError, OSError, RuntimeError, TimeoutError):
+        return
 
 
 def main():
     parser = argparse.ArgumentParser(description="FolderSyncPro USN helper")
     parser.add_argument("--server", action="store_true")
-    parser.add_argument("--port", type=int, required=True)
-    parser.add_argument("--token", required=True)
+    parser.add_argument("--pipe", required=True)
     args = parser.parse_args()
 
     if args.server:
-        serve(args.port, args.token)
+        serve(args.pipe)
 
 
 if __name__ == "__main__":
