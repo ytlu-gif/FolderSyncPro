@@ -47,6 +47,24 @@ class FileIndexTests(unittest.TestCase):
                 set(),
             )
 
+            index.set_usn_cursor(
+                "project",
+                "source",
+                project_root,
+                "C:\\",
+                123,
+                456,
+            )
+
+            self.assertEqual(
+                index.get_usn_cursor(
+                    "project",
+                    "source",
+                    project_root,
+                ),
+                ("C:\\", 123, 456),
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

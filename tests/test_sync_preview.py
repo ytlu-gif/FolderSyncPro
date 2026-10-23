@@ -194,6 +194,47 @@ class SyncPreviewTests(unittest.TestCase):
                 "same.txt",
             )
 
+    def test_two_way_preview_skips_same_content_with_different_mtime(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            target = root / "target"
+            source.mkdir()
+            target.mkdir()
+
+            source_file = source / "same.txt"
+            target_file = target / "same.txt"
+
+            source_file.write_text(
+                "abc",
+                encoding="utf-8",
+            )
+            target_file.write_text(
+                "abc",
+                encoding="utf-8",
+            )
+
+            old_time = time.time() - 120
+            new_time = time.time()
+            os.utime(
+                source_file,
+                (old_time, old_time),
+            )
+            os.utime(
+                target_file,
+                (new_time, new_time),
+            )
+
+            preview = preview_sync(
+                source,
+                target,
+                mode="two_way",
+                project_name="unit-test-preview-mtime-drift",
+            )
+
+            self.assertEqual(preview["summary"]["conflict"], 0)
+            self.assertEqual(preview["summary"]["total"], 0)
+
     def test_two_way_preview_uses_state_to_skip_unchanged_content_read(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

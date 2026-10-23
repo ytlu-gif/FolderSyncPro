@@ -1,5 +1,6 @@
 import sys
 import threading
+import time
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -43,12 +44,48 @@ from database.project_manager import (
 from core.scanner import scan_folder
 
 
-APP_VERSION = "0.3.0-alpha.1"
+APP_VERSION = "0.3.0-alpha.3"
 
 
 TRANSLATIONS = {
     "zh_TW": {
         "app_title": "FolderSyncPro",
+        "workflow_step_project": "步驟 1/4：準備專案",
+        "workflow_step_paths": "步驟 2/4：設定資料夾",
+        "workflow_step_preview": "步驟 3/4：預覽同步",
+        "workflow_step_preview_running": "步驟 3/4：產生預覽",
+        "workflow_step_review": "步驟 4/4：檢查結果",
+        "workflow_step_sync_running": "步驟 4/4：同步執行中",
+        "workflow_step_done": "完成：同步結果",
+        "workflow_hint_project": "請從「檔案」選擇「新增專案」，或選取現有專案。",
+        "workflow_hint_paths": "請填寫來源與目的資料夾，或按「瀏覽」選擇資料夾。",
+        "workflow_hint_preview": "請從「功能」選擇「預覽同步」，先檢查即將處理的檔案。",
+        "workflow_hint_preview_running": "正在計算變更，需要時可從「功能」選擇「停止同步」。",
+        "workflow_hint_review": "請檢查下方結果表格；確認後從「功能」選擇「開始同步」。",
+        "workflow_hint_sync_running": "正在執行同步，進度會顯示在上方，需要時可停止。",
+        "workflow_hint_done": "同步已完成，可查看結果，或再次預覽下一次變更。",
+        "toolbar_new_project": "新增專案",
+        "toolbar_update_project": "更新專案",
+        "toolbar_scan": "分析/掃描",
+        "toolbar_preview": "預覽同步",
+        "toolbar_sync": "開始同步",
+        "toolbar_stop": "停止",
+        "toolbar_start_watch": "啟動監控",
+        "toolbar_stop_watch": "停止監控",
+        "toolbar_history": "同步歷史",
+        "toolbar_file": "檔案",
+        "toolbar_features": "功能",
+        "toolbar_view": "檢視",
+        "view_sync_history": "同步歷史",
+        "view_language": "語言",
+        "language_zh_tw": "繁體中文",
+        "language_en": "English",
+        "file_new_project": "新增專案",
+        "file_select_project": "選擇專案",
+        "file_save_project": "儲存專案",
+        "file_update_project": "更新專案",
+        "file_delete_project": "刪除選取專案",
+        "file_exit": "離開",
         "toolbar_usage": "使用說明",
         "toolbar_about": "關於",
         "section_project_info": "專案資訊",
@@ -80,9 +117,25 @@ TRANSLATIONS = {
         "card_synced_files": "同步檔案",
         "card_conflicts": "衝突數",
         "section_log": "同步日誌",
+        "section_result": "最近處理結果",
+        "result_idle": "尚未執行同步或預覽。",
+        "result_running": "{operation}執行中...",
+        "result_completed": "{operation}完成，新增 {add}，更新 {update}，刪除 {delete}，衝突 {conflict}",
+        "result_cancelled": "{operation}已停止",
+        "result_error": "{operation}失敗：{err}",
+        "result_column_action": "動作",
+        "result_column_path": "檔案路徑",
+        "result_column_direction": "方向",
+        "result_column_status": "狀態",
+        "result_column_reason": "說明",
+        "result_done": "完成",
+        "result_processing": "處理中",
+        "result_error_status": "錯誤",
+        "result_preview": "預覽",
         "dialog_close": "關閉",
         "log_app_started": "FolderSyncPro 已啟動",
         "log_enter_project_name": "請輸入專案名稱",
+        "log_new_project_ready": "已準備建立新專案，請輸入資料後選擇「檔案 > 儲存專案」",
         "log_project_added": "新增專案成功：{name}",
         "log_project_exists": "專案名稱已存在：{name}",
         "log_add_failed": "新增失敗：{err}",
@@ -168,6 +221,42 @@ TRANSLATIONS = {
     },
     "en": {
         "app_title": "FolderSyncPro",
+        "workflow_step_project": "Step 1/4: Prepare Project",
+        "workflow_step_paths": "Step 2/4: Set Folders",
+        "workflow_step_preview": "Step 3/4: Preview Sync",
+        "workflow_step_preview_running": "Step 3/4: Building Preview",
+        "workflow_step_review": "Step 4/4: Review Results",
+        "workflow_step_sync_running": "Step 4/4: Syncing",
+        "workflow_step_done": "Complete: Sync Results",
+        "workflow_hint_project": "Choose File > New Project, or select an existing project.",
+        "workflow_hint_paths": "Enter the source and target folders, or use Browse.",
+        "workflow_hint_preview": "Choose Features > Preview Sync to review the planned changes first.",
+        "workflow_hint_preview_running": "Calculating changes. Choose Features > Stop when needed.",
+        "workflow_hint_review": "Review the results table, then choose Features > Start Sync.",
+        "workflow_hint_sync_running": "Sync is running. Progress is shown above and can be stopped.",
+        "workflow_hint_done": "Sync completed. Review the results or preview the next change set.",
+        "toolbar_new_project": "New Project",
+        "toolbar_update_project": "Update Project",
+        "toolbar_scan": "Analyze / Scan",
+        "toolbar_preview": "Preview Sync",
+        "toolbar_sync": "Start Sync",
+        "toolbar_stop": "Stop",
+        "toolbar_start_watch": "Start Watching",
+        "toolbar_stop_watch": "Stop Watching",
+        "toolbar_history": "Sync History",
+        "toolbar_file": "File",
+        "toolbar_features": "Features",
+        "toolbar_view": "View",
+        "view_sync_history": "Sync History",
+        "view_language": "Language",
+        "language_zh_tw": "Traditional Chinese",
+        "language_en": "English",
+        "file_new_project": "New Project",
+        "file_select_project": "Select Project",
+        "file_save_project": "Save Project",
+        "file_update_project": "Update Project",
+        "file_delete_project": "Delete Selected Project",
+        "file_exit": "Exit",
         "toolbar_usage": "Usage Guide",
         "toolbar_about": "About",
         "section_project_info": "Project Info",
@@ -199,9 +288,25 @@ TRANSLATIONS = {
         "card_synced_files": "Synced Files",
         "card_conflicts": "Conflicts",
         "section_log": "Sync Log",
+        "section_result": "Recent Results",
+        "result_idle": "No sync or preview has run yet.",
+        "result_running": "{operation} in progress...",
+        "result_completed": "{operation} complete  Added {add}, Updated {update}, Deleted {delete}, Conflicts {conflict}",
+        "result_cancelled": "{operation} stopped",
+        "result_error": "{operation} failed: {err}",
+        "result_column_action": "Action",
+        "result_column_path": "File Path",
+        "result_column_direction": "Direction",
+        "result_column_status": "Status",
+        "result_column_reason": "Details",
+        "result_done": "Done",
+        "result_processing": "Processing",
+        "result_error_status": "Error",
+        "result_preview": "Preview",
         "dialog_close": "Close",
         "log_app_started": "FolderSyncPro started",
         "log_enter_project_name": "Please enter a project name",
+        "log_new_project_ready": "New project form is ready. Enter the details, then choose File > Save Project.",
         "log_project_added": "Project added: {name}",
         "log_project_exists": "Project name already exists: {name}",
         "log_add_failed": "Failed to add: {err}",
@@ -309,7 +414,13 @@ class DashboardApp(ttk.Window):
 
         self.current_lang = "zh_TW"
         self.i18n_registry = []
+        self.i18n_heading_registry = []
+        self.i18n_menu_registry = []
+        self.file_menu_items = {}
+        self.feature_menu_items = {}
         self.ui_font_family = self._pick_font_family()
+        self.workflow_step_key = "workflow_step_project"
+        self.workflow_hint_key = "workflow_hint_project"
 
         self.project_name = tk.StringVar()
         self.source_path = tk.StringVar()
@@ -323,6 +434,9 @@ class DashboardApp(ttk.Window):
         self.watcher = None
         self.sync_cancel_requested = False
         self.sync_thread = None
+        self.operation_started_at = None
+        self.operation_name = ""
+        self.result_row_limit = 250
 
         self.build_ui()
         self.load_statistics()
@@ -410,6 +524,71 @@ class DashboardApp(ttk.Window):
 
         widget.config(text=self.tr(key))
 
+    def reg_heading(self, tree, column, key):
+
+        self.i18n_heading_registry.append((tree, column, key))
+
+        tree.heading(
+            column,
+            text=self.tr(key)
+        )
+
+    def reg_menu_item(self, menu, index, key):
+
+        self.i18n_menu_registry.append((menu, index, key))
+
+        menu.entryconfigure(
+            index,
+            label=self.tr(key)
+        )
+
+    def add_feature_menu_item(self, key, command, state="normal"):
+
+        self.feature_menu.add_command(
+            label=self.tr(key),
+            command=command,
+            state=state
+        )
+
+        index = self.feature_menu.index("end")
+        self.feature_menu_items[key] = index
+        self.reg_menu_item(
+            self.feature_menu,
+            index,
+            key
+        )
+
+    def add_file_menu_item(self, key, command, state="normal"):
+
+        self.file_menu.add_command(
+            label=self.tr(key),
+            command=command,
+            state=state
+        )
+
+        index = self.file_menu.index("end")
+        self.file_menu_items[key] = index
+        self.reg_menu_item(
+            self.file_menu,
+            index,
+            key
+        )
+
+    def set_feature_menu_state(self, key, state):
+
+        index = self.feature_menu_items.get(key)
+
+        if index is None:
+            return
+
+        try:
+            self.feature_menu.entryconfigure(
+                index,
+                state=state
+            )
+        except tk.TclError:
+            pass
+
     def set_language(self, lang_code):
 
         if lang_code not in TRANSLATIONS:
@@ -424,6 +603,67 @@ class DashboardApp(ttk.Window):
             except tk.TclError:
                 pass
 
+        for tree, column, key in self.i18n_heading_registry:
+
+            try:
+                tree.heading(
+                    column,
+                    text=self.tr(key)
+                )
+            except tk.TclError:
+                pass
+
+        for menu, index, key in self.i18n_menu_registry:
+
+            try:
+                menu.entryconfigure(
+                    index,
+                    label=self.tr(key)
+                )
+            except tk.TclError:
+                pass
+
+        self.render_workflow_hint()
+
+    def set_workflow_state(self, step_key, hint_key):
+
+        self.workflow_step_key = step_key
+        self.workflow_hint_key = hint_key
+        self.render_workflow_hint()
+
+    def render_workflow_hint(self):
+
+        if not hasattr(self, "workflow_step_label"):
+            return
+
+        self.workflow_step_label.config(
+            text=self.tr(self.workflow_step_key)
+        )
+        self.workflow_hint_label.config(
+            text=self.tr(self.workflow_hint_key)
+        )
+
+    def refresh_workflow_from_form(self):
+
+        if self.sync_thread and self.sync_thread.is_alive():
+            return
+
+        if not self.project_name.get().strip() and not self.source_path.get() and not self.target_path.get():
+            self.set_workflow_state(
+                "workflow_step_project",
+                "workflow_hint_project"
+            )
+        elif not self.source_path.get() or not self.target_path.get():
+            self.set_workflow_state(
+                "workflow_step_paths",
+                "workflow_hint_paths"
+            )
+        else:
+            self.set_workflow_state(
+                "workflow_step_preview",
+                "workflow_hint_preview"
+            )
+
     def build_ui(self):
 
         # 淡色背景 + 高對比文字/框線的自訂色票
@@ -434,7 +674,7 @@ class DashboardApp(ttk.Window):
         LOG_BORDER = "#8c96a3"
 
         # ======================
-        # 工具列(語言切換 / 使用說明 / 關於)
+        # 工具列(檔案 / 功能 / 檢視 / 使用說明 / 關於)
         # ======================
 
         toolbar = ttk.Frame(self)
@@ -445,19 +685,144 @@ class DashboardApp(ttk.Window):
             pady=(8, 0)
         )
 
-        ttk.Button(
+        self.file_menu = tk.Menu(
             toolbar,
-            text="繁體中文",
-            command=lambda: self.set_language("zh_TW"),
-            bootstyle="link"
-        ).pack(side="left", padx=(0, 2))
+            tearoff=False
+        )
 
-        ttk.Button(
+        self.add_file_menu_item(
+            "file_new_project",
+            self.new_project
+        )
+        self.add_file_menu_item(
+            "file_select_project",
+            self.focus_project_list
+        )
+        self.file_menu.add_separator()
+        self.add_file_menu_item(
+            "file_save_project",
+            self.save_project
+        )
+        self.add_file_menu_item(
+            "file_update_project",
+            self.update_project
+        )
+        self.add_file_menu_item(
+            "file_delete_project",
+            self.delete_selected_project
+        )
+        self.file_menu.add_separator()
+        self.add_file_menu_item(
+            "file_exit",
+            self.on_closing
+        )
+
+        self.file_menu_button = ttk.Menubutton(
             toolbar,
-            text="English",
-            command=lambda: self.set_language("en"),
+            menu=self.file_menu,
             bootstyle="link"
-        ).pack(side="left", padx=2)
+        )
+        self.reg(self.file_menu_button, "toolbar_file")
+        self.file_menu_button.pack(side="left", padx=(0, 2))
+
+        self.feature_menu = tk.Menu(
+            toolbar,
+            tearoff=False
+        )
+
+        self.add_feature_menu_item(
+            "toolbar_scan",
+            self.scan_source
+        )
+        self.add_feature_menu_item(
+            "toolbar_preview",
+            self.show_sync_preview
+        )
+        self.add_feature_menu_item(
+            "toolbar_sync",
+            self.start_sync
+        )
+        self.add_feature_menu_item(
+            "toolbar_stop",
+            self.stop_sync,
+            state="disabled"
+        )
+        self.feature_menu.add_separator()
+        self.add_feature_menu_item(
+            "toolbar_start_watch",
+            self.start_watch
+        )
+        self.add_feature_menu_item(
+            "toolbar_stop_watch",
+            self.stop_watch,
+            state="disabled"
+        )
+
+        self.feature_menu_button = ttk.Menubutton(
+            toolbar,
+            menu=self.feature_menu,
+            bootstyle="link"
+        )
+        self.reg(self.feature_menu_button, "toolbar_features")
+        self.feature_menu_button.pack(side="left", padx=(0, 2))
+
+        self.view_menu = tk.Menu(
+            toolbar,
+            tearoff=False
+        )
+
+        self.view_menu.add_command(
+            label=self.tr("view_sync_history"),
+            command=self.show_sync_logs
+        )
+        self.reg_menu_item(
+            self.view_menu,
+            0,
+            "view_sync_history"
+        )
+
+        self.language_menu = tk.Menu(
+            self.view_menu,
+            tearoff=False
+        )
+
+        self.language_menu.add_command(
+            label=self.tr("language_zh_tw"),
+            command=lambda: self.set_language("zh_TW")
+        )
+        self.reg_menu_item(
+            self.language_menu,
+            0,
+            "language_zh_tw"
+        )
+
+        self.language_menu.add_command(
+            label=self.tr("language_en"),
+            command=lambda: self.set_language("en")
+        )
+        self.reg_menu_item(
+            self.language_menu,
+            1,
+            "language_en"
+        )
+
+        self.view_menu.add_cascade(
+            label=self.tr("view_language"),
+            menu=self.language_menu
+        )
+        self.reg_menu_item(
+            self.view_menu,
+            1,
+            "view_language"
+        )
+
+        self.view_menu_button = ttk.Menubutton(
+            toolbar,
+            menu=self.view_menu,
+            bootstyle="link"
+        )
+        self.reg(self.view_menu_button, "toolbar_view")
+        self.view_menu_button.pack(side="left", padx=(0, 2))
 
         ttk.Separator(
             toolbar,
@@ -496,6 +861,35 @@ class DashboardApp(ttk.Window):
         )
 
         title.pack(pady=(15, 5))
+
+        workflow_frame = ttk.Frame(self)
+        workflow_frame.pack(
+            fill="x",
+            padx=20,
+            pady=(0, 5)
+        )
+
+        self.workflow_step_label = ttk.Label(
+            workflow_frame,
+            bootstyle="primary",
+            anchor="w"
+        )
+        self.workflow_step_label.pack(
+            side="left",
+            padx=(0, 12)
+        )
+
+        self.workflow_hint_label = ttk.Label(
+            workflow_frame,
+            bootstyle="secondary",
+            anchor="w"
+        )
+        self.workflow_hint_label.pack(
+            side="left",
+            fill="x",
+            expand=True
+        )
+        self.render_workflow_hint()
 
         # ======================
         # 第一列：專案清單(左) + 專案資訊(右)
@@ -570,16 +964,6 @@ class DashboardApp(ttk.Window):
 
         delete_project_btn.pack(side="left", padx=(0, 20))
 
-        sync_history_btn = ttk.Button(
-            list_action_frame,
-            command=self.show_sync_logs,
-            bootstyle="info"
-        )
-
-        self.reg(sync_history_btn, "btn_sync_history")
-
-        sync_history_btn.pack(side="left", padx=(0, 20))
-
         recycle_group = ttk.Frame(list_action_frame)
 
         recycle_group.pack(side="left")
@@ -628,11 +1012,18 @@ class DashboardApp(ttk.Window):
 
         label_project_name.grid(row=0, column=0, padx=5, pady=5, sticky="e")
 
-        ttk.Entry(
+        self.project_name_entry = ttk.Entry(
             form_frame,
             textvariable=self.project_name,
             width=40
-        ).grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        )
+        self.project_name_entry.grid(
+            row=0,
+            column=1,
+            padx=5,
+            pady=5,
+            sticky="w"
+        )
 
         label_source_folder = ttk.Label(
             form_frame,
@@ -842,25 +1233,26 @@ class DashboardApp(ttk.Window):
 
         self.preview_sync_btn.pack(side="left", padx=5)
 
-        start_watch_btn = ttk.Button(
+        self.start_watch_btn = ttk.Button(
             sync_action_frame,
             command=self.start_watch,
             bootstyle="secondary"
         )
 
-        self.reg(start_watch_btn, "btn_start_watch")
+        self.reg(self.start_watch_btn, "btn_start_watch")
 
-        start_watch_btn.pack(side="left", padx=5)
+        self.start_watch_btn.pack(side="left", padx=5)
 
-        stop_watch_btn = ttk.Button(
+        self.stop_watch_btn = ttk.Button(
             sync_action_frame,
             command=self.stop_watch,
+            state="disabled",
             bootstyle="danger"
         )
 
-        self.reg(stop_watch_btn, "btn_stop_watch")
+        self.reg(self.stop_watch_btn, "btn_stop_watch")
 
-        stop_watch_btn.pack(side="left", padx=5)
+        self.stop_watch_btn.pack(side="left", padx=5)
 
         # ---- 同步進度條 ----
 
@@ -929,6 +1321,150 @@ class DashboardApp(ttk.Window):
             stat_frame,
             "card_conflicts",
             "0"
+        )
+
+        # ======================
+        # 最近處理結果
+        # ======================
+
+        result_frame = ttk.Labelframe(
+            self,
+            bootstyle="primary"
+        )
+
+        self.reg(result_frame, "section_result")
+
+        result_frame.pack(
+            fill="both",
+            expand=False,
+            padx=20,
+            pady=(10, 0)
+        )
+
+        self.result_summary_label = ttk.Label(
+            result_frame,
+            anchor="w",
+            bootstyle="dark"
+        )
+
+        self.result_summary_label.pack(
+            fill="x",
+            padx=10,
+            pady=(7, 4)
+        )
+
+        result_table_frame = ttk.Frame(result_frame)
+        result_table_frame.pack(
+            fill="both",
+            expand=True,
+            padx=10,
+            pady=(0, 8)
+        )
+
+        result_columns = (
+            "action",
+            "path",
+            "direction",
+            "status",
+            "reason",
+        )
+
+        self.result_tree = ttk.Treeview(
+            result_table_frame,
+            columns=result_columns,
+            show="headings",
+            height=6
+        )
+
+        self.reg_heading(
+            self.result_tree,
+            "action",
+            "result_column_action"
+        )
+        self.reg_heading(
+            self.result_tree,
+            "path",
+            "result_column_path"
+        )
+        self.reg_heading(
+            self.result_tree,
+            "direction",
+            "result_column_direction"
+        )
+        self.reg_heading(
+            self.result_tree,
+            "status",
+            "result_column_status"
+        )
+        self.reg_heading(
+            self.result_tree,
+            "reason",
+            "result_column_reason"
+        )
+
+        self.result_tree.column(
+            "action",
+            width=85,
+            anchor="center",
+            stretch=False
+        )
+        self.result_tree.column("path", width=420, anchor="w")
+        self.result_tree.column(
+            "direction",
+            width=135,
+            anchor="center",
+            stretch=False
+        )
+        self.result_tree.column(
+            "status",
+            width=85,
+            anchor="center",
+            stretch=False
+        )
+        self.result_tree.column("reason", width=330, anchor="w")
+
+        self.result_tree.tag_configure(
+            "error",
+            foreground="#b42318"
+        )
+        self.result_tree.tag_configure(
+            "conflict",
+            foreground="#9a6700"
+        )
+        self.result_tree.tag_configure(
+            "delete",
+            foreground="#b42318"
+        )
+        self.result_tree.tag_configure(
+            "add",
+            foreground="#067647"
+        )
+
+        result_y_scroll = ttk.Scrollbar(
+            result_table_frame,
+            orient="vertical",
+            command=self.result_tree.yview
+        )
+        result_x_scroll = ttk.Scrollbar(
+            result_table_frame,
+            orient="horizontal",
+            command=self.result_tree.xview
+        )
+
+        self.result_tree.configure(
+            yscrollcommand=result_y_scroll.set,
+            xscrollcommand=result_x_scroll.set
+        )
+
+        self.result_tree.grid(row=0, column=0, sticky="nsew")
+        result_y_scroll.grid(row=0, column=1, sticky="ns")
+        result_x_scroll.grid(row=1, column=0, sticky="ew")
+
+        result_table_frame.grid_rowconfigure(0, weight=1)
+        result_table_frame.grid_columnconfigure(0, weight=1)
+
+        self.result_summary_label.config(
+            text=self.tr("result_idle")
         )
 
         # ======================
@@ -1093,6 +1629,8 @@ class DashboardApp(ttk.Window):
             bool(project[4])
         )
 
+        self.refresh_workflow_from_form()
+
         self.write_log(
             self.tr("log_project_loaded", name=project[1])
         )
@@ -1107,6 +1645,7 @@ class DashboardApp(ttk.Window):
 
         if folder:
             self.source_path.set(folder)
+            self.refresh_workflow_from_form()
 
     def choose_target(self):
 
@@ -1114,6 +1653,29 @@ class DashboardApp(ttk.Window):
 
         if folder:
             self.target_path.set(folder)
+            self.refresh_workflow_from_form()
+
+    def focus_project_list(self):
+
+        self.project_listbox.focus_set()
+
+    def new_project(self):
+
+        if self.sync_thread and self.sync_thread.is_alive():
+            return
+
+        self.project_listbox.selection_clear(0, tk.END)
+        self.project_name.set("")
+        self.source_path.set("")
+        self.target_path.set("")
+        self.auto_watch.set(False)
+        self._reset_result_panel()
+        self.project_name_entry.focus_set()
+        self.set_workflow_state(
+            "workflow_step_paths",
+            "workflow_hint_paths"
+        )
+        self.write_log(self.tr("log_new_project_ready"))
 
     def save_project(self):
 
@@ -1141,6 +1703,10 @@ class DashboardApp(ttk.Window):
             )
 
             self.load_statistics()
+            self.set_workflow_state(
+                "workflow_step_preview",
+                "workflow_hint_preview"
+            )
 
         except Exception as e:
 
@@ -1195,6 +1761,10 @@ class DashboardApp(ttk.Window):
             self.write_log(
                 self.tr("log_project_updated", name=self.project_name.get())
             )
+            self.set_workflow_state(
+                "workflow_step_preview",
+                "workflow_hint_preview"
+            )
 
         except Exception as e:
 
@@ -1231,6 +1801,10 @@ class DashboardApp(ttk.Window):
          )
 
         self.load_statistics()
+        self.set_workflow_state(
+            "workflow_step_project",
+            "workflow_hint_project"
+        )
 
     def scan_source(self):
 
@@ -1282,6 +1856,16 @@ class DashboardApp(ttk.Window):
         self.write_log(
             self.tr("log_preview_start")
         )
+
+        self.set_workflow_state(
+            "workflow_step_preview_running",
+            "workflow_hint_preview_running"
+        )
+
+        self._reset_result_panel(
+            self.tr("toolbar_preview")
+        )
+        self._set_operation_controls(True)
 
         self.sync_progress["value"] = 0
         self.sync_progress_label.config(text="0%")
@@ -1338,8 +1922,12 @@ class DashboardApp(ttk.Window):
                 self.tr("log_preview_cancelled")
             )
 
-            self.preview_sync_btn.config(state="normal")
-            self.stop_sync_btn.config(state="disabled")
+            self._complete_result_panel({}, cancelled=True)
+            self._set_operation_controls(False)
+            self.set_workflow_state(
+                "workflow_step_preview",
+                "workflow_hint_preview"
+            )
             self.sync_cancel_requested = False
 
             return
@@ -1359,13 +1947,19 @@ class DashboardApp(ttk.Window):
             )
         )
 
+        self._append_preview_results(preview)
+        self._complete_result_panel(summary)
+        self.set_workflow_state(
+            "workflow_step_review",
+            "workflow_hint_review"
+        )
+
         self._show_preview_table_dialog(
             self.tr("preview_title"),
             preview
         )
 
-        self.preview_sync_btn.config(state="normal")
-        self.stop_sync_btn.config(state="disabled")
+        self._set_operation_controls(False)
         self.sync_cancel_requested = False
 
     def _on_preview_error(self, err):
@@ -1374,8 +1968,12 @@ class DashboardApp(ttk.Window):
             self.tr("log_preview_failed", err=err)
         )
 
-        self.preview_sync_btn.config(state="normal")
-        self.stop_sync_btn.config(state="disabled")
+        self._set_result_error(err)
+        self._set_operation_controls(False)
+        self.set_workflow_state(
+            "workflow_step_preview",
+            "workflow_hint_preview"
+        )
         self.sync_cancel_requested = False
 
     def _show_preview_table_dialog(self, title, preview):
@@ -1614,6 +2212,210 @@ class DashboardApp(ttk.Window):
 
         return "\n".join(lines).rstrip()
 
+    def _reset_result_panel(self, operation=None):
+
+        for item in self.result_tree.get_children():
+            self.result_tree.delete(item)
+
+        if operation:
+            self.operation_name = operation
+            self.operation_started_at = time.monotonic()
+            self.result_summary_label.config(
+                text=self.tr(
+                    "result_running",
+                    operation=operation
+                )
+            )
+        else:
+            self.operation_name = ""
+            self.operation_started_at = None
+            self.result_summary_label.config(
+                text=self.tr("result_idle")
+            )
+
+    def _set_operation_controls(self, running):
+
+        normal = "disabled" if running else "normal"
+
+        for button in (
+            self.start_sync_btn,
+            self.preview_sync_btn,
+        ):
+            button.config(state=normal)
+
+        for key in (
+            "toolbar_scan",
+            "toolbar_preview",
+            "toolbar_sync",
+        ):
+            self.set_feature_menu_state(key, normal)
+
+        for key in (
+            "file_new_project",
+            "file_select_project",
+            "file_save_project",
+            "file_update_project",
+            "file_delete_project",
+        ):
+            self.file_menu.entryconfigure(
+                self.file_menu_items[key],
+                state=normal
+            )
+
+        stop_state = "normal" if running else "disabled"
+
+        self.stop_sync_btn.config(state=stop_state)
+        self.set_feature_menu_state(
+            "toolbar_stop",
+            stop_state
+        )
+
+    def _append_result_row(
+        self,
+        action,
+        path,
+        direction,
+        status,
+        reason,
+        tag="",
+    ):
+
+        children = self.result_tree.get_children()
+
+        if len(children) >= self.result_row_limit:
+            self.result_tree.delete(children[0])
+
+        values = (
+            action,
+            path,
+            direction,
+            status,
+            reason,
+        )
+
+        self.result_tree.insert(
+            "",
+            "end",
+            values=values,
+            tags=(tag,) if tag else ()
+        )
+
+        self.result_tree.yview_moveto(1.0)
+
+    def _parse_sync_log(self, text):
+
+        entries = (
+            ("[新增至目的]", "preview_add", "source_to_target", "add"),
+            ("[新增至來源]", "preview_add", "target_to_source", "add"),
+            ("[新增]", "preview_add", "source_to_target", "add"),
+            ("[更新]", "preview_update", "source_to_target", ""),
+            ("[衝突/以來源較新為準]", "preview_conflict", "source_to_target", "conflict"),
+            ("[衝突/以目的較新為準]", "preview_conflict", "target_to_source", "conflict"),
+            ("[回收桶/來源]", "preview_delete", "delete_from_source", "delete"),
+            ("[回收桶/目的]", "preview_delete", "delete_from_target", "delete"),
+            ("[回收桶]", "preview_delete", "delete_from_target", "delete"),
+            ("[跳過]", "preview_skip", "none", ""),
+            ("[錯誤]", "result_error_status", "none", "error"),
+        )
+
+        for prefix, action_key, direction, tag in entries:
+
+            if not text.startswith(prefix):
+                continue
+
+            path = text[len(prefix):].strip()
+            action = self.tr(action_key)
+            direction_text = self._format_preview_direction(direction)
+            status = self.tr(
+                "result_error_status"
+                if tag == "error"
+                else "result_done"
+            )
+
+            return (
+                action,
+                path,
+                direction_text,
+                status,
+                "",
+                tag,
+            )
+
+        return None
+
+    def _append_worker_result(self, text):
+
+        parsed = self._parse_sync_log(text)
+
+        if parsed:
+            self._append_result_row(*parsed)
+
+    def _append_preview_results(self, preview):
+
+        displayed = 0
+
+        for action_type, action in self._iter_preview_rows(preview):
+
+            if displayed >= self.result_row_limit:
+                break
+
+            tag = action_type if action_type in {
+                "add",
+                "delete",
+                "conflict",
+            } else ""
+
+            self._append_result_row(
+                self.tr(f"preview_{action_type}"),
+                action.get("path", ""),
+                self._format_preview_direction(
+                    action.get("direction", "none")
+                ),
+                self.tr("result_preview"),
+                action.get("reason", ""),
+                tag,
+            )
+            displayed += 1
+
+    def _complete_result_panel(self, result, cancelled=False):
+
+        operation = self.operation_name or self.tr("toolbar_sync")
+
+        if cancelled:
+            self.result_summary_label.config(
+                text=self.tr(
+                    "result_cancelled",
+                    operation=operation
+                )
+            )
+            return
+
+        elapsed = ""
+        if self.operation_started_at is not None:
+            elapsed = f"  ·  {time.monotonic() - self.operation_started_at:.1f}s"
+
+        self.result_summary_label.config(
+            text=self.tr(
+                "result_completed",
+                operation=operation,
+                add=result.get("copied", result.get("add", 0)),
+                update=result.get("updated", result.get("update", 0)),
+                delete=result.get("deleted", result.get("delete", 0)),
+                conflict=result.get("conflicts", result.get("conflict", 0)),
+            ) + elapsed
+        )
+
+    def _set_result_error(self, err):
+
+        operation = self.operation_name or self.tr("toolbar_sync")
+        self.result_summary_label.config(
+            text=self.tr(
+                "result_error",
+                operation=operation,
+                err=err,
+            )
+        )
+
     def start_sync(self):
 
         source = self.source_path.get()
@@ -1638,6 +2440,11 @@ class DashboardApp(ttk.Window):
         mode = self.sync_mode.get()
         project_name = self.project_name.get()
         self.sync_cancel_requested = False
+        self.set_workflow_state(
+            "workflow_step_sync_running",
+            "workflow_hint_sync_running"
+        )
+        self._set_operation_controls(True)
 
         if mode in ("mirror", "two_way"):
 
@@ -1716,8 +2523,12 @@ class DashboardApp(ttk.Window):
                 self.tr("log_risk_check_cancelled")
             )
 
-            self.start_sync_btn.config(state="normal")
-            self.stop_sync_btn.config(state="disabled")
+            self._complete_result_panel({}, cancelled=True)
+            self._set_operation_controls(False)
+            self.set_workflow_state(
+                "workflow_step_review",
+                "workflow_hint_review"
+            )
             self.sync_cancel_requested = False
 
             return
@@ -1744,8 +2555,12 @@ class DashboardApp(ttk.Window):
                     self.tr("log_sync_cancelled")
                 )
 
-                self.start_sync_btn.config(state="normal")
-                self.stop_sync_btn.config(state="disabled")
+                self._complete_result_panel({}, cancelled=True)
+                self._set_operation_controls(False)
+                self.set_workflow_state(
+                    "workflow_step_review",
+                    "workflow_hint_review"
+                )
 
                 return
 
@@ -1762,14 +2577,24 @@ class DashboardApp(ttk.Window):
             self.tr("log_risk_check_failed", err=err)
         )
 
-        self.start_sync_btn.config(state="normal")
-        self.stop_sync_btn.config(state="disabled")
+        self._set_result_error(err)
+        self._set_operation_controls(False)
+        self.set_workflow_state(
+            "workflow_step_review",
+            "workflow_hint_review"
+        )
 
     def _start_sync_worker_thread(self, source, target, mode, project_name):
 
         self.sync_cancel_requested = False
-        self.start_sync_btn.config(state="disabled")
-        self.stop_sync_btn.config(state="normal")
+        self.set_workflow_state(
+            "workflow_step_sync_running",
+            "workflow_hint_sync_running"
+        )
+        self._reset_result_panel(
+            self.tr("toolbar_sync")
+        )
+        self._set_operation_controls(True)
 
         self.sync_progress["value"] = 0
         self.sync_progress_label.config(text="0%")
@@ -1826,8 +2651,13 @@ class DashboardApp(ttk.Window):
 
         self.after(
             0,
-            lambda t=text: self.write_log(t)
+            lambda t=text: self._handle_worker_log(t)
         )
+
+    def _handle_worker_log(self, text):
+
+        self.write_log(text)
+        self._append_worker_result(text)
 
     def _is_sync_cancel_requested(self):
 
@@ -1848,6 +2678,15 @@ class DashboardApp(ttk.Window):
     def _on_sync_progress(self, done, total, relative):
 
         percent = int(done / total * 100) if total else 0
+
+        now = time.monotonic()
+        if (
+            done < total
+            and now - getattr(self, "last_progress_update", 0) < 0.1
+        ):
+            return
+
+        self.last_progress_update = now
 
         self.after(
             0,
@@ -1888,6 +2727,20 @@ class DashboardApp(ttk.Window):
                 )
             )
 
+        self._complete_result_panel(
+            result,
+            cancelled=result.get("cancelled", False)
+        )
+
+        self.set_workflow_state(
+            "workflow_step_review"
+            if result.get("cancelled")
+            else "workflow_step_done",
+            "workflow_hint_review"
+            if result.get("cancelled")
+            else "workflow_hint_done"
+        )
+
         self.file_count_label.config(
             text=str(scan_result["files"])
         )
@@ -1899,8 +2752,7 @@ class DashboardApp(ttk.Window):
         self.sync_progress["value"] = 100
         self.sync_progress_label.config(text="100%")
 
-        self.start_sync_btn.config(state="normal")
-        self.stop_sync_btn.config(state="disabled")
+        self._set_operation_controls(False)
         self.sync_cancel_requested = False
 
     def _on_sync_error(self, err):
@@ -1909,8 +2761,12 @@ class DashboardApp(ttk.Window):
             self.tr("log_sync_failed", err=err)
         )
 
-        self.start_sync_btn.config(state="normal")
-        self.stop_sync_btn.config(state="disabled")
+        self._set_result_error(err)
+        self._set_operation_controls(False)
+        self.set_workflow_state(
+            "workflow_step_review",
+            "workflow_hint_review"
+        )
         self.sync_cancel_requested = False
 
     def start_watch(self):
@@ -1970,6 +2826,17 @@ class DashboardApp(ttk.Window):
 
             self.monitor_count_label.config(
                 text="1"
+            )
+
+            self.start_watch_btn.config(state="disabled")
+            self.stop_watch_btn.config(state="normal")
+            self.set_feature_menu_state(
+                "toolbar_start_watch",
+                "disabled"
+            )
+            self.set_feature_menu_state(
+                "toolbar_stop_watch",
+                "normal"
             )
 
             self.write_log(
@@ -2033,6 +2900,17 @@ class DashboardApp(ttk.Window):
             self.write_log(
                 self.tr("log_watch_stopped")
             )
+
+        self.start_watch_btn.config(state="normal")
+        self.stop_watch_btn.config(state="disabled")
+        self.set_feature_menu_state(
+            "toolbar_start_watch",
+            "normal"
+        )
+        self.set_feature_menu_state(
+            "toolbar_stop_watch",
+            "disabled"
+        )
 
     def open_recycle_bin(self):
 
