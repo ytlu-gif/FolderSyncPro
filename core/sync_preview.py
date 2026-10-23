@@ -356,7 +356,6 @@ def _preview_two_way_existing_pair(
 
     same_content = (
         src_entry.size == tgt_entry.size
-        and abs(src_entry.mtime - tgt_entry.mtime) < 1
         and _files_have_same_content(src_file, tgt_file)
     )
 

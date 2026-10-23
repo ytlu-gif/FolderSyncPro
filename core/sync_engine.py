@@ -3,11 +3,17 @@ from pathlib import Path
 import shutil
 
 from core.file_index import (
+    get_usn_cursor,
     safe_update_index_entry,
     safe_update_index_snapshot,
+    safe_set_usn_cursor,
 )
 from core.file_scanner import get_file_entry, iter_sync_files
 from core.recycle_manager import move_to_recycle_bin
+from core.usn_client import (
+    read_changed_paths_with_elevation,
+)
+from core.usn_journal import JournalCursor
 from database.project_manager import add_sync_log
 
 
@@ -145,6 +151,58 @@ def _soft_delete(
         return False
 
 
+def _files_have_same_content(
+    left,
+    right,
+    chunk_size=1024 * 1024
+):
+    """
+    Compare file bytes only when metadata alone is not reliable enough.
+    """
+
+    try:
+
+        with open(left, "rb") as left_file, open(right, "rb") as right_file:
+
+            while True:
+
+                left_chunk = left_file.read(chunk_size)
+                right_chunk = right_file.read(chunk_size)
+
+                if left_chunk != right_chunk:
+                    return False
+
+                if not left_chunk:
+                    return True
+
+    except OSError:
+
+        return False
+
+
+def _entries_match_synced_state(
+    src_entry,
+    tgt_entry,
+    state_entry
+):
+    if not isinstance(state_entry, dict):
+        return False
+
+    state_size = state_entry.get("size")
+    state_mtime = state_entry.get("mtime")
+
+    if state_size != src_entry.size or state_size != tgt_entry.size:
+        return False
+
+    if not isinstance(state_mtime, (int, float)):
+        return False
+
+    return (
+        abs(src_entry.mtime - state_mtime) < 1
+        and abs(tgt_entry.mtime - state_mtime) < 1
+    )
+
+
 def sync_folder(
     source_path,
     target_path,
@@ -177,6 +235,16 @@ def sync_folder(
 
     if mode == "two_way":
 
+        journal_context = None
+
+        if changed_paths is None:
+            changed_paths, journal_context = _prepare_journal_delta(
+                project_name,
+                source_path,
+                target_path,
+                mode,
+            )
+
         return sync_folder_two_way(
             source_path,
             target_path,
@@ -184,7 +252,8 @@ def sync_folder(
             project_name=project_name,
             progress_func=progress_func,
             cancel_func=cancel_func,
-            changed_paths=changed_paths
+            changed_paths=changed_paths,
+            _journal_context=journal_context,
         )
 
     source = Path(source_path)
@@ -220,7 +289,17 @@ def sync_folder(
             "cancelled": cancelled
         }
 
-    changed_keys = _normalize_changed_paths(changed_paths)
+    journal_context = None
+
+    if changed_paths is None:
+        changed_keys, journal_context = _prepare_journal_delta(
+            project_name,
+            source,
+            target,
+            mode,
+        )
+    else:
+        changed_keys = _normalize_changed_paths(changed_paths)
 
     if changed_keys is None:
 
@@ -532,7 +611,13 @@ def sync_folder(
 
             report(relative)
 
-    return build_result()
+    result = build_result()
+    _save_journal_cursors(
+        project_name,
+        journal_context,
+        cancelled=result["cancelled"],
+    )
+    return result
 
 
 def sync_folder_two_way(
@@ -542,7 +627,8 @@ def sync_folder_two_way(
     project_name="未命名專案",
     progress_func=None,
     cancel_func=None,
-    changed_paths=None
+    changed_paths=None,
+    _journal_context=None,
 ):
     """
     雙向同步
@@ -550,7 +636,7 @@ def sync_folder_two_way(
     對每個檔案(以相對路徑為 key)，分成三種狀況：
 
     1. 兩邊都有
-        - 內容一樣（size、mtime 相同） -> 不動作
+        - 內容一樣（狀態記錄吻合，或 size 相同且內容相同） -> 不動作
         - 內容不同（衝突）             -> 以「較新的修改時間」為準，覆蓋較舊的一邊
 
     2. 只有一邊有
@@ -719,9 +805,28 @@ def sync_folder_two_way(
 
         if src_entry and tgt_entry:
 
+            if _entries_match_synced_state(
+                src_entry,
+                tgt_entry,
+                state.get(relative)
+            ):
+
+                new_state[relative] = {
+                    "size": src_entry.size,
+                    "mtime": max(
+                        src_entry.mtime,
+                        tgt_entry.mtime
+                    )
+                }
+
+                continue
+
             same_content = (
                 src_entry.size == tgt_entry.size
-                and abs(src_entry.mtime - tgt_entry.mtime) < 1
+                and _files_have_same_content(
+                    src_entry.path,
+                    tgt_entry.path
+                )
             )
 
             if same_content:
@@ -928,7 +1033,80 @@ def sync_folder_two_way(
                 relative,
             )
 
-    return build_result()
+    result = build_result()
+    _save_journal_cursors(
+        project_name,
+        _journal_context,
+        cancelled=result["cancelled"],
+    )
+    return result
+
+
+def _prepare_journal_delta(
+    project_name,
+    source_path,
+    target_path,
+    mode,
+):
+    roots = [("source", source_path)]
+
+    if mode in {"mirror", "two_way"}:
+        roots.append(("target", target_path))
+
+    context = []
+    changed_paths = set()
+
+    for side, root in roots:
+        previous = get_usn_cursor(
+            project_name,
+            side,
+            root,
+        )
+        previous_cursor = None
+
+        if previous:
+            previous_cursor = JournalCursor(
+                volume_root=previous[0],
+                journal_id=previous[1],
+                next_usn=previous[2],
+            )
+
+        changes = read_changed_paths_with_elevation(
+            root,
+            previous_cursor,
+        )
+        context.append((side, root, changes))
+
+        if changes.full_scan_required:
+            return None, context
+
+        changed_paths.update(changes.paths)
+
+    return changed_paths, context
+
+
+def _save_journal_cursors(
+    project_name,
+    journal_context,
+    cancelled=False,
+):
+    if cancelled or not journal_context:
+        return
+
+    for side, root, changes in journal_context:
+        cursor = changes.cursor
+
+        if not cursor:
+            continue
+
+        safe_set_usn_cursor(
+            project_name,
+            side,
+            root,
+            cursor.volume_root,
+            cursor.journal_id,
+            cursor.next_usn,
+        )
 
 
 def _normalize_changed_paths(changed_paths):
