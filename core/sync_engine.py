@@ -1,6 +1,10 @@
 import json
+import os
 from pathlib import Path
 import shutil
+from core.filesystem_diagnostics import (
+    FAT32_MAX_FILE_SIZE, copy_error_hint, get_volume_info,
+)
 
 from core.file_index import (
     get_usn_cursor,
@@ -79,49 +83,61 @@ def _save_state(project_name, state):
         )
 
 
-def safe_copy(
-    src_file,
-    target_file,
-    log_func=None
-):
-    """
-    安全複製
-    避免 WinError 32
-    """
+def _io_path(path):
+    """Use Windows extended paths for deep directory trees, including UNC."""
+    path = os.path.abspath(path)
+    if os.name == "nt" and not path.startswith("\\\\?\\"):
+        if path.startswith("\\\\"):
+            path = "\\\\?\\UNC\\" + path[2:]
+        else:
+            path = "\\\\?\\" + path
+    return Path(path)
 
+
+def safe_copy(src_file, target_file, log_func=None):
+    src_file, target_file = Path(src_file), Path(target_file)
     try:
-
-        target_file.parent.mkdir(
-            parents=True,
-            exist_ok=True
-        )
-
-        shutil.copy2(
-            src_file,
-            target_file
-        )
-
+        source_io, target_io = _io_path(src_file), _io_path(target_file)
+        if source_io.stat().st_size > FAT32_MAX_FILE_SIZE:
+            info = get_volume_info(target_io.parent)
+            if info and info[1] == 'FAT32':
+                error = OSError('FAT32 single-file size limit exceeded')
+                error.winerror = 223
+                raise error
+        target_io.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_io, target_io)
         return True
-
-    except PermissionError:
-
+    except OSError as error:
         if log_func:
-
-            log_func(
-                f"[跳過] 檔案被占用：{src_file.name}"
+            cache = getattr(log_func, 'diagnostic_cache', {})
+            hint = copy_error_hint(error, source_io, target_io, cache)
+            if hint:
+                notice_key = ('notice', hint)
+                if notice_key not in cache:
+                    cache[notice_key] = True
+                    log_func(f'[磁碟格式提醒] {hint}')
+            details = (
+                f"{error}; source={src_file.absolute()}; "
+                f"target={target_file.absolute()}; "
+                f"source_exists={_io_path(src_file).exists()}; "
+                f"target_parent_exists={_io_path(target_file).parent.exists()}; "
+                f"path_lengths={len(str(src_file.absolute()))}/{len(str(target_file.absolute()))}"
             )
-
+            if hint:
+                details = hint.replace('\n', ' ') + '; ' + details
+            log_func(f"[錯誤] {src_file} | {details}")
         return False
 
-    except Exception as e:
 
+def _count_failures(log_func):
+    failures = {"errors": 0}
+    def report(text):
+        if text.startswith(("[錯誤]", "[回收桶失敗]")):
+            failures["errors"] += 1
         if log_func:
-
-            log_func(
-                f"[錯誤] {src_file.name} : {e}"
-            )
-
-        return False
+            log_func(text)
+    report.diagnostic_cache = {}
+    return failures, report
 
 
 def _soft_delete(
@@ -270,6 +286,8 @@ def sync_folder(
         exist_ok=True
     )
 
+    failures, log_func = _count_failures(log_func)
+
     copied = 0
     updated = 0
     deleted = 0
@@ -285,6 +303,8 @@ def sync_folder(
             "updated": updated,
 
             "deleted": deleted,
+
+            "errors": failures["errors"],
 
             "cancelled": cancelled
         }
@@ -615,7 +635,7 @@ def sync_folder(
     _save_journal_cursors(
         project_name,
         journal_context,
-        cancelled=result["cancelled"],
+        cancelled=result["cancelled"] or bool(result["errors"]),
     )
     return result
 
@@ -663,6 +683,8 @@ def sync_folder_two_way(
             f"目的不存在：{target}"
         )
 
+    failures, log_func = _count_failures(log_func)
+
     copied_to_target = 0
     copied_to_source = 0
     updated = 0
@@ -687,12 +709,14 @@ def sync_folder_two_way(
 
             "deleted": deleted,
 
+            "errors": failures["errors"],
+
             "cancelled": cancelled
         }
 
     state = _load_state(project_name)
     changed_keys = _normalize_changed_paths(changed_paths)
-    new_state = dict(state) if changed_keys is not None else {}
+    new_state = dict(state)
 
     if changed_keys is None:
 
@@ -865,6 +889,9 @@ def sync_folder_two_way(
                         relative
                     )
 
+                else:
+                    continue
+
                 stat_after = src_file.stat()
 
             else:
@@ -885,6 +912,9 @@ def sync_folder_two_way(
                         "CONFLICT_TARGET_WINS",
                         relative
                     )
+
+                else:
+                    continue
 
                 stat_after = tgt_file.stat()
 
@@ -919,8 +949,7 @@ def sync_folder_two_way(
                         relative
                     )
 
-                # 已刪除，不寫回 new_state
-                new_state.pop(relative, None)
+                    new_state.pop(relative, None)
 
             else:
 
@@ -976,7 +1005,7 @@ def sync_folder_two_way(
                         relative
                     )
 
-                new_state.pop(relative, None)
+                    new_state.pop(relative, None)
 
             else:
 
@@ -1037,7 +1066,7 @@ def sync_folder_two_way(
     _save_journal_cursors(
         project_name,
         _journal_context,
-        cancelled=result["cancelled"],
+        cancelled=result["cancelled"] or bool(result["errors"]),
     )
     return result
 

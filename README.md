@@ -15,6 +15,20 @@
 - 淡色主題、高對比配色
 - Windows NTFS 可使用 USN Journal 變更索引加速；不支援或權限不足時會自動回到完整掃描
 
+## v0.3.0-alpha.5 重點
+
+- FAT32 WinError 82 會提示可能的單一目錄容量限制與處理建議。
+- FAT32 超大檔案於複製前攔下，清楚說明單檔上限。
+- 同一資料夾每次同步只提醒一次，不會自動變更磁碟格式。
+
+## v0.3.0-alpha.4 重點
+
+- 可拖曳調整主要區塊高度及專案清單／資訊寬度
+- 最近結果與同步日誌整合為分頁
+- 長路徑複製、完整錯誤資訊與失敗數統計
+- 失敗同步不再誤記狀態，保留 USN 重新檢查機會
+- 完整更新紀錄請見 [CHANGELOG.md](CHANGELOG.md)
+
 ## v0.3.0-alpha.3 重點
 
 - 新增專業操作工具列，集中管理專案、掃描、預覽、同步與監控功能
@@ -93,3 +107,9 @@ FolderSyncPro/
 ## 開發者
 
 本程式由中國醫藥大學人文與科技學院科法碩士學位學程盧裕倉老師開發。
+
+## Windows 版本與打包
+
+版本由 version.py 管理；installer.iss 預設值須隨版本同步更新。建議建立獨立 Python 虛擬環境後安裝 requirements.txt，執行 python build_release.py。若要連同安裝檔打包，執行 python build_release.py --installer "C:\Users\User\AppData\Local\Programs\Inno Setup 7\ISCC.exe"（請改成自己的安裝位置）。
+
+輸出到 dist_v0_3_0_alpha_5 與 Output；不刪除舊版檔案。主程式與 FolderSyncProUsnHelper.exe 須放在同一目錄。版本資訊會寫入兩個 EXE，供 Windows 內容頁辨識。build-requirements.txt 記錄本次打包的精確依賴版本，GitHub 發布草稿見 RELEASE_NOTES_v0.3.0-alpha.5.md。
