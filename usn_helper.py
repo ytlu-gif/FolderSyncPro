@@ -9,7 +9,6 @@ import time
 from core.usn_journal import JournalCursor, read_changed_paths
 
 
-IDLE_TIMEOUT_SECONDS = 300
 CONNECT_TIMEOUT_SECONDS = 15
 MAX_REQUEST_BYTES = 1024 * 1024
 
@@ -132,14 +131,14 @@ def _handle_request(request):
 
 
 def serve(pipe_name: str):
-    deadline = time.monotonic() + IDLE_TIMEOUT_SECONDS
-
     try:
         connection = _connect_pipe(pipe_name)
         try:
-            while time.monotonic() < deadline:
-                remaining = min(2.0, deadline - time.monotonic())
-                if not connection.poll(max(remaining, 0.0)):
+            # Keep the elevated helper alive for the lifetime of the GUI.
+            # The named pipe breaks when the parent closes or exits, and the
+            # outer handler then terminates this helper automatically.
+            while True:
+                if not connection.poll(2.0):
                     continue
 
                 try:
@@ -158,7 +157,6 @@ def serve(pipe_name: str):
                 connection.send_bytes(
                     json.dumps(response, ensure_ascii=False).encode("utf-8")
                 )
-                deadline = time.monotonic() + IDLE_TIMEOUT_SECONDS
                 if should_stop:
                     return
         finally:

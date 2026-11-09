@@ -44,7 +44,7 @@ from database.project_manager import (
 from core.scanner import scan_folder
 
 
-APP_VERSION = "0.3.0-alpha.3"
+from version import APP_VERSION
 
 
 TRANSLATIONS = {
@@ -118,6 +118,8 @@ TRANSLATIONS = {
         "card_conflicts": "衝突數",
         "section_log": "同步日誌",
         "section_result": "最近處理結果",
+        "disk_warning_title": "磁碟格式限制提醒",
+        "result_errors": "；失敗 {errors}（請查看錯誤項目）",
         "result_idle": "尚未執行同步或預覽。",
         "result_running": "{operation}執行中...",
         "result_completed": "{operation}完成，新增 {add}，更新 {update}，刪除 {delete}，衝突 {conflict}",
@@ -289,6 +291,8 @@ TRANSLATIONS = {
         "card_conflicts": "Conflicts",
         "section_log": "Sync Log",
         "section_result": "Recent Results",
+        "disk_warning_title": "Filesystem limitation warning",
+        "result_errors": "; Failed {errors} (see error rows)",
         "result_idle": "No sync or preview has run yet.",
         "result_running": "{operation} in progress...",
         "result_completed": "{operation} complete  Added {add}, Updated {update}, Deleted {delete}, Conflicts {conflict}",
@@ -405,7 +409,7 @@ class DashboardApp(ttk.Window):
     def __init__(self):
 
         super().__init__(
-            title="FolderSyncPro",
+            title=f"FolderSyncPro v{APP_VERSION}",
             themename="litera",
             size=(1400, 900)
         )
@@ -624,6 +628,10 @@ class DashboardApp(ttk.Window):
                 pass
 
         self.render_workflow_hint()
+
+        if hasattr(self, "activity_tabs"):
+            for index, key in enumerate(("section_result", "section_log")):
+                self.activity_tabs.tab(index, text=self.tr(key))
 
     def set_workflow_state(self, step_key, hint_key):
 
@@ -895,13 +903,16 @@ class DashboardApp(ttk.Window):
         # 第一列：專案清單(左) + 專案資訊(右)
         # ======================
 
-        top_row_frame = ttk.Frame(self)
-
-        top_row_frame.pack(
-            fill="x",
-            padx=20,
-            pady=10
+        self.section_panes = tk.PanedWindow(
+            self, orient="vertical", sashwidth=7, sashrelief="raised",
+            showhandle=True, opaqueresize=True
         )
+        self.section_panes.pack(fill="both", expand=True, padx=20, pady=8)
+        top_row_frame = tk.PanedWindow(
+            self.section_panes, orient="horizontal", sashwidth=7,
+            sashrelief="raised", opaqueresize=True
+        )
+        self.section_panes.add(top_row_frame, minsize=100, height=180)
 
         # ---- 專案清單(左) ----
 
@@ -912,12 +923,7 @@ class DashboardApp(ttk.Window):
 
         self.reg(project_frame, "section_project_list")
 
-        project_frame.pack(
-            side="left",
-            fill="both",
-            expand=True,
-            padx=(0, 10)
-        )
+        top_row_frame.add(project_frame, minsize=240, stretch="always")
 
         self.project_listbox = tk.Listbox(
             project_frame,
@@ -997,11 +1003,7 @@ class DashboardApp(ttk.Window):
 
         self.reg(form_frame, "section_project_info")
 
-        form_frame.pack(
-            side="left",
-            fill="both",
-            expand=True
-        )
+        top_row_frame.add(form_frame, minsize=240, stretch="always")
 
         label_project_name = ttk.Label(
             form_frame,
@@ -1122,17 +1124,13 @@ class DashboardApp(ttk.Window):
         # ======================
 
         sync_frame = ttk.Labelframe(
-            self,
+            self.section_panes,
             bootstyle="primary"
         )
 
         self.reg(sync_frame, "section_sync_settings")
 
-        sync_frame.pack(
-            fill="x",
-            padx=20,
-            pady=(0, 10)
-        )
+        self.section_panes.add(sync_frame, minsize=100, height=125)
 
         mode_frame = ttk.Frame(sync_frame)
 
@@ -1292,12 +1290,9 @@ class DashboardApp(ttk.Window):
         # Dashboard 卡片
         # ======================
 
-        stat_frame = ttk.Frame(self)
+        stat_frame = ttk.Frame(self.section_panes)
 
-        stat_frame.pack(
-            fill="x",
-            padx=20
-        )
+        self.section_panes.add(stat_frame, minsize=55, height=85)
 
         self.project_count_label = self.create_card(
             stat_frame,
@@ -1327,19 +1322,16 @@ class DashboardApp(ttk.Window):
         # 最近處理結果
         # ======================
 
+        self.activity_tabs = ttk.Notebook(self.section_panes)
+        self.section_panes.add(self.activity_tabs, minsize=130, stretch="always")
         result_frame = ttk.Labelframe(
-            self,
+            self.activity_tabs,
             bootstyle="primary"
         )
 
         self.reg(result_frame, "section_result")
 
-        result_frame.pack(
-            fill="both",
-            expand=False,
-            padx=20,
-            pady=(10, 0)
-        )
+        self.activity_tabs.add(result_frame, text=self.tr("section_result"))
 
         self.result_summary_label = ttk.Label(
             result_frame,
@@ -1472,18 +1464,13 @@ class DashboardApp(ttk.Window):
         # ======================
 
         log_frame = ttk.Labelframe(
-            self,
+            self.activity_tabs,
             bootstyle="primary"
         )
 
         self.reg(log_frame, "section_log")
 
-        log_frame.pack(
-            fill="both",
-            expand=True,
-            padx=20,
-            pady=20
-        )
+        self.activity_tabs.add(log_frame, text=self.tr("section_log"))
 
         self.log_text = ScrolledText(
             log_frame,
@@ -2214,6 +2201,8 @@ class DashboardApp(ttk.Window):
 
     def _reset_result_panel(self, operation=None):
 
+        self.disk_warning_messages = set()
+
         for item in self.result_tree.get_children():
             self.result_tree.delete(item)
 
@@ -2316,6 +2305,7 @@ class DashboardApp(ttk.Window):
             ("[回收桶]", "preview_delete", "delete_from_target", "delete"),
             ("[跳過]", "preview_skip", "none", ""),
             ("[錯誤]", "result_error_status", "none", "error"),
+            ("[回收桶失敗]", "result_error_status", "none", "error"),
         )
 
         for prefix, action_key, direction, tag in entries:
@@ -2324,6 +2314,7 @@ class DashboardApp(ttk.Window):
                 continue
 
             path = text[len(prefix):].strip()
+            path, _, reason = path.partition(" | ")
             action = self.tr(action_key)
             direction_text = self._format_preview_direction(direction)
             status = self.tr(
@@ -2337,7 +2328,7 @@ class DashboardApp(ttk.Window):
                 path,
                 direction_text,
                 status,
-                "",
+                reason,
                 tag,
             )
 
@@ -2402,7 +2393,7 @@ class DashboardApp(ttk.Window):
                 update=result.get("updated", result.get("update", 0)),
                 delete=result.get("deleted", result.get("delete", 0)),
                 conflict=result.get("conflicts", result.get("conflict", 0)),
-            ) + elapsed
+            ) + (self.tr("result_errors", errors=result["errors"]) if result.get("errors") else "") + elapsed
         )
 
     def _set_result_error(self, err):
@@ -2656,6 +2647,16 @@ class DashboardApp(ttk.Window):
 
     def _handle_worker_log(self, text):
 
+        prefix = '[磁碟格式提醒] '
+        if text.startswith(prefix):
+            body = text[len(prefix):]
+            seen = getattr(self, 'disk_warning_messages', set())
+            if body not in seen:
+                seen.add(body)
+                self.disk_warning_messages = seen
+                # Modeless: the user can still stop synchronization.
+                self._show_text_dialog(self.tr('disk_warning_title'), body)
+        # Keep full text available after the recent-results row limit is reached.
         self.write_log(text)
         self._append_worker_result(text)
 
