@@ -7,6 +7,7 @@ from core.filesystem_diagnostics import (
 )
 
 from core.file_index import (
+    get_index_paths,
     get_usn_cursor,
     safe_update_index_entry,
     safe_update_index_snapshot,
@@ -773,8 +774,21 @@ def sync_folder_two_way(
         }
 
     state = _load_state(project_name)
+    indexed_paths = (
+        get_index_paths(project_name, "source", source)
+        | get_index_paths(project_name, "target", target)
+    )
+    historical_paths = set(state) | indexed_paths
     changed_keys = _normalize_changed_paths(changed_paths)
     new_state = dict(state)
+
+    if changed_keys is not None:
+        changed_keys.update(
+            relative
+            for relative in historical_paths
+            if not (source / relative).is_file()
+            or not (target / relative).is_file()
+        )
 
     if changed_keys is None:
 
@@ -879,7 +893,10 @@ def sync_folder_two_way(
 
         src_entry = source_files.get(relative)
         tgt_entry = target_files.get(relative)
-        was_synced = relative in state
+        was_synced = (
+            relative in state
+            or relative in indexed_paths
+        )
 
         # --------------------------
         # 兩邊都有

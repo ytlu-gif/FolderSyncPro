@@ -334,6 +334,17 @@ def safe_update_index_entry(
         pass
 
 
+def get_index_paths(project_name, side, root_path) -> set[str]:
+    try:
+        return FileIndex().get_paths(
+            project_name,
+            side,
+            root_path,
+        )
+    except Exception:
+        return set()
+
+
 def get_usn_cursor(project_name, side, root_path):
     try:
         return FileIndex().get_usn_cursor(
