@@ -1,6 +1,8 @@
 import sys
+import queue
 import threading
 import time
+import webbrowser
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -42,6 +44,7 @@ from database.project_manager import (
 )
 
 from core.scanner import scan_folder
+from core.update_checker import ReleaseInfo, get_latest_release, version_key
 
 
 from version import APP_VERSION
@@ -76,8 +79,14 @@ TRANSLATIONS = {
         "toolbar_file": "檔案",
         "toolbar_features": "功能",
         "toolbar_view": "檢視",
+        "toolbar_help": "說明",
         "view_sync_history": "同步歷史",
         "view_language": "語言",
+        "view_check_updates": "檢查更新",
+        "update_title": "FolderSyncPro 更新通知",
+        "update_available_message": "發現新版本 {version}。\n目前版本：{current}\n\n是否前往 GitHub 下載？",
+        "update_latest": "目前版本：{current}\nGitHub 最新公開版本：{latest}\n\n目前已是最新版本。",
+        "update_check_failed": "目前無法檢查更新，請稍後再試。",
         "language_zh_tw": "繁體中文",
         "language_en": "English",
         "file_new_project": "新增專案",
@@ -249,8 +258,14 @@ TRANSLATIONS = {
         "toolbar_file": "File",
         "toolbar_features": "Features",
         "toolbar_view": "View",
+        "toolbar_help": "Help",
         "view_sync_history": "Sync History",
         "view_language": "Language",
+        "view_check_updates": "Check for Updates",
+        "update_title": "FolderSyncPro Update",
+        "update_available_message": "A new version {version} is available.\nCurrent version: {current}\n\nOpen GitHub to download it?",
+        "update_latest": "Current version: {current}\nLatest public GitHub version: {latest}\n\nYou are using the latest version.",
+        "update_check_failed": "The update check could not be completed. Please try again later.",
         "language_zh_tw": "Traditional Chinese",
         "language_en": "English",
         "file_new_project": "New Project",
@@ -441,6 +456,9 @@ class DashboardApp(ttk.Window):
         self.operation_started_at = None
         self.operation_name = ""
         self.result_row_limit = 250
+        self._update_check_thread = None
+        self._update_check_queue = queue.Queue()
+        self._update_check_manual = False
 
         self.build_ui()
         self.load_statistics()
@@ -448,6 +466,7 @@ class DashboardApp(ttk.Window):
             "WM_DELETE_WINDOW",
             self.on_closing
         )
+        self.after(1500, self._queue_update_check)
 
     def _set_window_icon(self):
         """
@@ -651,6 +670,79 @@ class DashboardApp(ttk.Window):
             text=self.tr(self.workflow_hint_key)
         )
 
+    def _queue_update_check(self, manual=False):
+        """Run the network request away from Tk's main thread."""
+
+        if self._update_check_thread and self._update_check_thread.is_alive():
+            return
+
+        self._update_check_manual = manual
+        self._update_check_thread = threading.Thread(
+            target=self._run_update_check,
+            daemon=True
+        )
+        self._update_check_thread.start()
+        self.after(100, self._poll_update_check)
+
+    def _run_update_check(self):
+        try:
+            latest = get_latest_release()
+            result = None
+            if latest and version_key(latest.tag_name) > version_key(APP_VERSION):
+                result = latest
+            self._update_check_queue.put((result, latest, None))
+        except Exception as error:
+            # Update checks are optional and must never affect the main app.
+            self._update_check_queue.put((None, None, error))
+
+    def _poll_update_check(self):
+        try:
+            release, latest, error = self._update_check_queue.get_nowait()
+        except queue.Empty:
+            if self._update_check_thread and self._update_check_thread.is_alive():
+                self.after(100, self._poll_update_check)
+            return
+
+        manual = self._update_check_manual
+        self._update_check_thread = None
+
+        if error:
+            if manual:
+                messagebox.showwarning(
+                    self.tr("update_title"),
+                    self.tr("update_check_failed")
+                )
+            return
+
+        if release:
+            self._show_update_available(release)
+        elif manual:
+            messagebox.showinfo(
+                self.tr("update_title"),
+                self.tr(
+                    "update_latest",
+                    current=APP_VERSION,
+                    latest=latest.tag_name if latest else "-"
+                )
+            )
+
+    def check_for_updates(self):
+        """Manually check GitHub Releases from View > Check for Updates."""
+
+        self._queue_update_check(manual=True)
+
+    def _show_update_available(self, release: ReleaseInfo):
+        should_open = messagebox.askyesno(
+            self.tr("update_title"),
+            self.tr(
+                "update_available_message",
+                version=release.tag_name,
+                current=APP_VERSION
+            )
+        )
+        if should_open:
+            webbrowser.open(release.html_url)
+
     def refresh_workflow_from_form(self):
 
         if self.sync_thread and self.sync_thread.is_alive():
@@ -682,19 +774,14 @@ class DashboardApp(ttk.Window):
         LOG_BORDER = "#8c96a3"
 
         # ======================
-        # 工具列(檔案 / 功能 / 檢視 / 使用說明 / 關於)
+        # 原生主選單(檔案 / 功能 / 檢視 / 說明)
         # ======================
 
-        toolbar = ttk.Frame(self)
-
-        toolbar.pack(
-            fill="x",
-            padx=10,
-            pady=(8, 0)
-        )
+        self.main_menu = tk.Menu(self, tearoff=False)
+        self.config(menu=self.main_menu)
 
         self.file_menu = tk.Menu(
-            toolbar,
+            self.main_menu,
             tearoff=False
         )
 
@@ -725,16 +812,8 @@ class DashboardApp(ttk.Window):
             self.on_closing
         )
 
-        self.file_menu_button = ttk.Menubutton(
-            toolbar,
-            menu=self.file_menu,
-            bootstyle="link"
-        )
-        self.reg(self.file_menu_button, "toolbar_file")
-        self.file_menu_button.pack(side="left", padx=(0, 2))
-
         self.feature_menu = tk.Menu(
-            toolbar,
+            self.main_menu,
             tearoff=False
         )
 
@@ -766,16 +845,8 @@ class DashboardApp(ttk.Window):
             state="disabled"
         )
 
-        self.feature_menu_button = ttk.Menubutton(
-            toolbar,
-            menu=self.feature_menu,
-            bootstyle="link"
-        )
-        self.reg(self.feature_menu_button, "toolbar_features")
-        self.feature_menu_button.pack(side="left", padx=(0, 2))
-
         self.view_menu = tk.Menu(
-            toolbar,
+            self.main_menu,
             tearoff=False
         )
 
@@ -789,11 +860,12 @@ class DashboardApp(ttk.Window):
             "view_sync_history"
         )
 
+        self.view_menu.add_separator()
+
         self.language_menu = tk.Menu(
             self.view_menu,
             tearoff=False
         )
-
         self.language_menu.add_command(
             label=self.tr("language_zh_tw"),
             command=lambda: self.set_language("zh_TW")
@@ -803,7 +875,6 @@ class DashboardApp(ttk.Window):
             0,
             "language_zh_tw"
         )
-
         self.language_menu.add_command(
             label=self.tr("language_en"),
             command=lambda: self.set_language("en")
@@ -820,42 +891,60 @@ class DashboardApp(ttk.Window):
         )
         self.reg_menu_item(
             self.view_menu,
-            1,
+            2,
             "view_language"
         )
 
-        self.view_menu_button = ttk.Menubutton(
-            toolbar,
-            menu=self.view_menu,
-            bootstyle="link"
+        self.view_menu.add_separator()
+
+        self.view_menu.add_command(
+            label=self.tr("view_check_updates"),
+            command=self.check_for_updates
         )
-        self.reg(self.view_menu_button, "toolbar_view")
-        self.view_menu_button.pack(side="left", padx=(0, 2))
-
-        ttk.Separator(
-            toolbar,
-            orient="vertical"
-        ).pack(side="left", fill="y", padx=8)
-
-        about_btn = ttk.Button(
-            toolbar,
-            command=self.show_about,
-            bootstyle="link"
+        self.reg_menu_item(
+            self.view_menu,
+            4,
+            "view_check_updates"
         )
 
-        about_btn.pack(side="right", padx=(2, 5))
-
-        self.reg(about_btn, "toolbar_about")
-
-        usage_btn = ttk.Button(
-            toolbar,
-            command=self.show_usage_guide,
-            bootstyle="link"
+        self.help_menu = tk.Menu(
+            self.main_menu,
+            tearoff=False
+        )
+        self.help_menu.add_command(
+            label=self.tr("toolbar_usage"),
+            command=self.show_usage_guide
+        )
+        self.reg_menu_item(
+            self.help_menu,
+            0,
+            "toolbar_usage"
+        )
+        self.help_menu.add_command(
+            label=self.tr("toolbar_about"),
+            command=self.show_about
+        )
+        self.reg_menu_item(
+            self.help_menu,
+            1,
+            "toolbar_about"
         )
 
-        usage_btn.pack(side="right", padx=2)
-
-        self.reg(usage_btn, "toolbar_usage")
+        for label_key, menu in (
+            ("toolbar_file", self.file_menu),
+            ("toolbar_features", self.feature_menu),
+            ("toolbar_view", self.view_menu),
+            ("toolbar_help", self.help_menu),
+        ):
+            self.main_menu.add_cascade(
+                label=self.tr(label_key),
+                menu=menu
+            )
+            self.reg_menu_item(
+                self.main_menu,
+                self.main_menu.index("end"),
+                label_key
+            )
 
         # ======================
         # 標題
