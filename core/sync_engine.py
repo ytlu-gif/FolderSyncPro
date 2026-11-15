@@ -778,8 +778,17 @@ def sync_folder_two_way(
         get_index_paths(project_name, "source", source)
         | get_index_paths(project_name, "target", target)
     )
+    historical_paths = set(state) | indexed_paths
     changed_keys = _normalize_changed_paths(changed_paths)
     new_state = dict(state)
+
+    if changed_keys is not None:
+        changed_keys.update(
+            relative
+            for relative in historical_paths
+            if not (source / relative).is_file()
+            or not (target / relative).is_file()
+        )
 
     if changed_keys is None:
 
