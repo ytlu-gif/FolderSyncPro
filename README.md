@@ -15,6 +15,15 @@
 - 淡色主題、高對比配色
 - Windows NTFS 可使用 USN Journal 變更索引加速；不支援或權限不足時會自動回到完整掃描
 
+## v0.3.0-alpha.6 重點
+
+- 鏡像／雙向同步刪除最後一個檔案後，會清理變成空的子資料夾
+- 雙向同步會以 JSON 狀態與 SQLite 索引共同判定已同步檔案
+- 備份模式維持只新增／更新，不刪除目的端資料
+- 啟動時檢查 GitHub Release，並可從檢視選單手動檢查更新
+- 檔案、功能、檢視與說明主選單整合，語言選項收在檢視選單
+- 41 項自動測試通過
+
 ## v0.3.0-alpha.5 重點
 
 - FAT32 WinError 82 會提示可能的單一目錄容量限制與處理建議。
@@ -112,4 +121,4 @@ FolderSyncPro/
 
 版本由 version.py 管理；installer.iss 預設值須隨版本同步更新。建議建立獨立 Python 虛擬環境後安裝 requirements.txt，執行 python build_release.py。若要連同安裝檔打包，執行 python build_release.py --installer "C:\Users\User\AppData\Local\Programs\Inno Setup 7\ISCC.exe"（請改成自己的安裝位置）。
 
-輸出到 dist_v0_3_0_alpha_5 與 Output；不刪除舊版檔案。主程式與 FolderSyncProUsnHelper.exe 須放在同一目錄。版本資訊會寫入兩個 EXE，供 Windows 內容頁辨識。build-requirements.txt 記錄本次打包的精確依賴版本，GitHub 發布草稿見 RELEASE_NOTES_v0.3.0-alpha.5.md。
+輸出到 dist_v0_3_0_alpha_6 與 Output；不刪除舊版檔案。主程式與 FolderSyncProUsnHelper.exe 須放在同一目錄。版本資訊會寫入兩個 EXE，供 Windows 內容頁辨識。build-requirements.txt 記錄本次打包的精確依賴版本，GitHub 發布草稿見 RELEASE_NOTES_v0.3.0-alpha.6.md。

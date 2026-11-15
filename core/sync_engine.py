@@ -7,6 +7,7 @@ from core.filesystem_diagnostics import (
 )
 
 from core.file_index import (
+    get_index_paths,
     get_usn_cursor,
     safe_update_index_entry,
     safe_update_index_snapshot,
@@ -165,6 +166,54 @@ def _soft_delete(
             )
 
         return False
+
+
+def _remove_empty_directories(
+    candidates,
+    root_path,
+    log_func=None,
+):
+    """Remove only empty directories made obsolete by a file deletion.
+
+    File entries are the unit of the sync index, so deleting the last file in
+    a folder can otherwise leave an empty directory behind. Candidates are
+    deliberately supplied by successful delete operations; this avoids
+    treating unrelated empty folders in a backup target as deletions.
+    """
+    root = Path(root_path).resolve()
+    pending = set()
+
+    for candidate in candidates:
+        current = Path(candidate).resolve()
+
+        try:
+            current.relative_to(root)
+        except ValueError:
+            continue
+
+        while current != root:
+            pending.add(current)
+            current = current.parent
+
+    removed = 0
+
+    for directory in sorted(
+        pending,
+        key=lambda path: len(path.parts),
+        reverse=True,
+    ):
+        try:
+            directory.rmdir()
+        except OSError:
+            continue
+
+        removed += 1
+
+        if log_func:
+            relative = directory.relative_to(root)
+            log_func(f"[刪除空資料夾] {relative}")
+
+    return removed
 
 
 def _files_have_same_content(
@@ -349,6 +398,7 @@ def sync_folder(
         return build_result(cancelled=True)
 
     mirror_delete_candidates = []
+    empty_target_dir_candidates = []
 
     if mode == "mirror":
 
@@ -600,6 +650,7 @@ def sync_folder(
                 ):
 
                     deleted += 1
+                    empty_target_dir_candidates.append(target_file.parent)
 
                     if log_func:
 
@@ -630,6 +681,12 @@ def sync_folder(
                     )
 
             report(relative)
+
+        deleted += _remove_empty_directories(
+            empty_target_dir_candidates,
+            target,
+            log_func,
+        )
 
     result = build_result()
     _save_journal_cursors(
@@ -690,6 +747,8 @@ def sync_folder_two_way(
     updated = 0
     conflicts = 0
     deleted = 0
+    empty_source_dir_candidates = []
+    empty_target_dir_candidates = []
 
     def is_cancelled():
         return bool(cancel_func and cancel_func())
@@ -715,6 +774,10 @@ def sync_folder_two_way(
         }
 
     state = _load_state(project_name)
+    indexed_paths = (
+        get_index_paths(project_name, "source", source)
+        | get_index_paths(project_name, "target", target)
+    )
     changed_keys = _normalize_changed_paths(changed_paths)
     new_state = dict(state)
 
@@ -821,7 +884,10 @@ def sync_folder_two_way(
 
         src_entry = source_files.get(relative)
         tgt_entry = target_files.get(relative)
-        was_synced = relative in state
+        was_synced = (
+            relative in state
+            or relative in indexed_paths
+        )
 
         # --------------------------
         # 兩邊都有
@@ -936,6 +1002,7 @@ def sync_folder_two_way(
                 if _soft_delete(src_entry.path, log_func):
 
                     deleted += 1
+                    empty_source_dir_candidates.append(src_entry.path.parent)
 
                     if log_func:
 
@@ -992,6 +1059,7 @@ def sync_folder_two_way(
                 if _soft_delete(tgt_entry.path, log_func):
 
                     deleted += 1
+                    empty_target_dir_candidates.append(tgt_entry.path.parent)
 
                     if log_func:
 
@@ -1041,6 +1109,17 @@ def sync_folder_two_way(
         else:
 
             new_state.pop(relative, None)
+
+    deleted += _remove_empty_directories(
+        empty_source_dir_candidates,
+        source,
+        log_func,
+    )
+    deleted += _remove_empty_directories(
+        empty_target_dir_candidates,
+        target,
+        log_func,
+    )
 
     _save_state(project_name, new_state)
 

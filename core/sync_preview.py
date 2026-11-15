@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from core.file_index import get_index_paths
 from core.file_scanner import FileEntry, iter_sync_files
 
 
@@ -221,6 +222,11 @@ def _preview_two_way(
 ) -> dict[str, Any]:
     preview = _empty_preview()
     state = _load_state(project_name)
+    indexed_paths = (
+        get_index_paths(project_name, "source", source)
+        | get_index_paths(project_name, "target", target)
+    )
+    previously_synced_paths = set(state) | indexed_paths
 
     def is_cancelled():
         return bool(cancel_func and cancel_func())
@@ -260,7 +266,7 @@ def _preview_two_way(
         relative = Path(relative_key)
         src_entry = source_files.get(relative_key)
         tgt_entry = target_files.get(relative_key)
-        was_synced = relative_key in state
+        was_synced = relative_key in previously_synced_paths
 
         if src_entry and tgt_entry:
             _preview_two_way_existing_pair(

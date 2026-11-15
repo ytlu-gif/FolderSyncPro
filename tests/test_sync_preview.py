@@ -136,6 +136,39 @@ class SyncPreviewTests(unittest.TestCase):
                 "target_to_source",
             )
 
+    def test_two_way_preview_uses_index_for_deleted_source_file(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            target = root / "target"
+            source.mkdir()
+            target.mkdir()
+
+            target_file = target / "removed-folder" / "remove.txt"
+            target_file.parent.mkdir()
+            target_file.write_text("previously synced", encoding="utf-8")
+
+            with patch(
+                "core.sync_preview.get_index_paths",
+                return_value={"removed-folder/remove.txt"},
+            ):
+                preview = preview_sync(
+                    source,
+                    target,
+                    mode="two_way",
+                    project_name="unit-test-preview-index-fallback",
+                )
+
+            self.assertEqual(preview["summary"]["delete"], 1)
+            self.assertEqual(
+                preview["delete"][0]["path"],
+                "removed-folder/remove.txt",
+            )
+            self.assertEqual(
+                preview["delete"][0]["direction"],
+                "delete_from_target",
+            )
+
     def test_preview_rejects_unsupported_mode(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

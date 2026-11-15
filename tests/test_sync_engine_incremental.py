@@ -74,6 +74,137 @@ class IncrementalSyncTests(unittest.TestCase):
             self.assertEqual(result["deleted"], 1)
             self.assertFalse(target_file.exists())
 
+    def test_mirror_removes_empty_parent_directory_after_last_file_delete(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            target = root / "target"
+            source.mkdir()
+            target.mkdir()
+
+            target_file = target / "removed-folder" / "remove.txt"
+            target_file.parent.mkdir()
+            target_file.write_text("remove", encoding="utf-8")
+
+            def fake_soft_delete(path, log_func=None):
+                path.unlink()
+                return True
+
+            with patch("core.sync_engine.add_sync_log"):
+                with patch(
+                    "core.sync_engine._soft_delete",
+                    side_effect=fake_soft_delete,
+                ):
+                    result = sync_folder(
+                        source,
+                        target,
+                        mode="mirror",
+                        project_name="unit-test-empty-directory-cleanup",
+                    )
+
+            self.assertEqual(result["deleted"], 2)
+            self.assertFalse(target_file.exists())
+            self.assertFalse(target_file.parent.exists())
+
+    def test_two_way_removes_empty_parent_directory_after_folder_delete(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            target = root / "target"
+            source.mkdir()
+            target.mkdir()
+
+            source_file = source / "removed-folder" / "remove.txt"
+            target_file = target / "removed-folder" / "remove.txt"
+            source_file.parent.mkdir()
+            target_file.parent.mkdir()
+            source_file.write_text("same", encoding="utf-8")
+            target_file.write_text("same", encoding="utf-8")
+
+            project_name = "unit-test-two-way-empty-directory-cleanup"
+            state_path = _state_file_path(project_name)
+            state_path.unlink(missing_ok=True)
+
+            try:
+                with patch("core.sync_engine.add_sync_log"):
+                    sync_folder(
+                        source,
+                        target,
+                        mode="two_way",
+                        project_name=project_name,
+                    )
+
+                    source_file.unlink()
+                    source_file.parent.rmdir()
+
+                    def fake_soft_delete(path, log_func=None):
+                        path.unlink()
+                        return True
+
+                    with patch(
+                        "core.sync_engine._soft_delete",
+                        side_effect=fake_soft_delete,
+                    ):
+                        result = sync_folder(
+                            source,
+                            target,
+                            mode="two_way",
+                            project_name=project_name,
+                            changed_paths={"removed-folder/remove.txt"},
+                        )
+
+                self.assertEqual(result["deleted"], 2)
+                self.assertFalse(target_file.exists())
+                self.assertFalse(target_file.parent.exists())
+
+            finally:
+                state_path.unlink(missing_ok=True)
+
+    def test_two_way_uses_index_when_state_file_has_no_deleted_path(self):
+        with TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            target = root / "target"
+            source.mkdir()
+            target.mkdir()
+
+            target_file = target / "removed-folder" / "remove.txt"
+            target_file.parent.mkdir()
+            target_file.write_text("previously synced", encoding="utf-8")
+
+            project_name = "unit-test-two-way-index-fallback"
+            state_path = _state_file_path(project_name)
+            state_path.unlink(missing_ok=True)
+
+            try:
+                def fake_soft_delete(path, log_func=None):
+                    path.unlink()
+                    return True
+
+                with patch(
+                    "core.sync_engine.get_index_paths",
+                    return_value={"removed-folder/remove.txt"},
+                ):
+                    with patch("core.sync_engine.add_sync_log"):
+                        with patch(
+                            "core.sync_engine._soft_delete",
+                            side_effect=fake_soft_delete,
+                        ):
+                            result = sync_folder(
+                                source,
+                                target,
+                                mode="two_way",
+                                project_name=project_name,
+                                changed_paths={"removed-folder/remove.txt"},
+                            )
+
+                self.assertEqual(result["deleted"], 2)
+                self.assertFalse(target_file.exists())
+                self.assertFalse(target_file.parent.exists())
+
+            finally:
+                state_path.unlink(missing_ok=True)
+
     def test_two_way_same_content_different_mtime_is_not_conflict(self):
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
